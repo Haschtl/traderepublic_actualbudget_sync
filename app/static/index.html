@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>TR → Actual Budget Sync — UI</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  </head>
+  <body class="bg-gray-100 text-gray-900">
+    <div class="max-w-4xl mx-auto p-6">
+      <h1 class="text-2xl font-bold mb-4">TR → Actual Budget Sync</h1>
+
+      <div id="session-info" class="mb-2 text-xs text-gray-500"></div>
+
+      <div class="mb-4">
+        <button id="btn-connect" class="bg-yellow-600 text-white px-4 py-2 rounded mr-2">Connecter Trade Republic</button>
+        <button id="btn-fetch" class="bg-blue-600 text-white px-4 py-2 rounded mr-2">Récupérer transactions</button>
+        <button id="btn-map" class="bg-green-600 text-white px-4 py-2 rounded mr-2">Prévisualiser mapping</button>
+        <button id="btn-sync" class="bg-indigo-600 text-white px-4 py-2 rounded">Synchroniser</button>
+      </div>
+
+      <div class="mb-4">
+        <label class="block mb-1">Code / PIN (si requis)</label>
+        <input id="otp" type="text" class="border rounded px-2 py-1" placeholder="Entrez le code reçu" />
+        <button id="btn-complete" class="bg-gray-700 text-white px-3 py-1 rounded ml-2">Soumettre</button>
+      </div>
+
+      <div id="status" class="mb-4"></div>
+
+      <div class="bg-white shadow rounded p-4">
+        <h2 class="font-semibold mb-2">Transactions brutes (mock)</h2>
+        <pre id="raw" class="text-sm overflow-auto max-h-48"></pre>
+      </div>
+
+      <div class="bg-white shadow rounded p-4 mt-4">
+        <h2 class="font-semibold mb-2">Preview mapping</h2>
+        <pre id="mapped" class="text-sm overflow-auto max-h-48"></pre>
+      </div>
+    </div>
+
+    <script>
+      let currentSessionId = localStorage.getItem('tr_session_id') || null
+
+      function setSessionId(sid) {
+        currentSessionId = sid
+        if (sid) localStorage.setItem('tr_session_id', sid)
+        else localStorage.removeItem('tr_session_id')
+        document.getElementById('session-info').textContent =
+          sid ? `Session active : ${sid.substring(0, 8)}…` : 'Aucune session active'
+      }
+
+      // Afficher la session persistée au chargement
+      setSessionId(currentSessionId)
+
+      async function fetchTxs() {
+        setStatus('Récupération...')
+        const body = currentSessionId ? JSON.stringify({ session_id: currentSessionId }) : '{}'
+        const res = await fetch('/tr/fetch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        })
+        const data = await res.json()
+        if (!res.ok) { setStatus('Erreur: ' + (data.detail || res.status)); return [] }
+        document.getElementById('raw').textContent = JSON.stringify(data.transactions, null, 2)
+        setStatus(`Récupéré ${data.count} transactions`)
+        return data.transactions
+      }
+
+      async function previewMap(transactions) {
+        setStatus('Mapping...')
+        const res = await fetch('/tr/map', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(transactions)
+        })
+        const data = await res.json()
+        document.getElementById('mapped').textContent = JSON.stringify(data, null, 2)
+        setStatus(`Preview: ${data.length} transactions mapped`)
+        return data
+      }
+
+      async function syncAll() {
+        setStatus('Synchronisation...')
+        const body = currentSessionId ? JSON.stringify({ session_id: currentSessionId }) : '{}'
+        const res = await fetch('/tr/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        })
+        const data = await res.json()
+        if (!res.ok) { setStatus('Erreur sync: ' + (data.detail || res.status)); return }
+        setStatus(`Sync terminé: mapped=${data.mapped_count} pushed=${JSON.stringify(data.pushed)}`)
+        return data
+      }
+
+      function setStatus(msg) {
+        document.getElementById('status').textContent = msg
+      }
+
+      document.getElementById('btn-fetch').addEventListener('click', async () => {
+        await fetchTxs()
+      })
+      document.getElementById('btn-connect').addEventListener('click', async () => {
+        setStatus('Démarrage connexion...')
+        const r = await fetch('/tr/connect', { method: 'POST' })
+        const j = await r.json()
+        if (j.session_id) setSessionId(j.session_id)
+        setStatus('Connect: ' + JSON.stringify(j))
+      })
+      document.getElementById('btn-complete').addEventListener('click', async () => {
+        const code = document.getElementById('otp').value
+        if (!code) { setStatus('Entrez un code'); return }
+        setStatus('Soumission...')
+        const r = await fetch('/tr/complete', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ code, session_id: currentSessionId })
+        })
+        const j = await r.json()
+        if (j.session_id) setSessionId(j.session_id)
+        setStatus('Complete: ' + JSON.stringify(j))
+      })
+      document.getElementById('btn-map').addEventListener('click', async () => {
+        let rawText = document.getElementById('raw').textContent
+        let txs = []
+        try { txs = JSON.parse(rawText) } catch(e) { txs = [] }
+        if (!txs || txs.length === 0) {
+          txs = await fetchTxs()
+        }
+        await previewMap(txs)
+      })
+      document.getElementById('btn-sync').addEventListener('click', async () => {
+        await syncAll()
+      })
+    </script>
+  </body>
+</html>
+

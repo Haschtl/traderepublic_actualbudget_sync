@@ -1,0 +1,95 @@
+from app.mapping.mapper import map_pytr_to_actual
+
+
+# Format mock pré-traité (ancien format avec id_externe/date/amount string)
+SAMPLE_MOCK = [
+    {
+        "id_externe": "1",
+        "date": "2026-04-20T08:52:15.398+0000",
+        "amount": "-4.87",
+        "currency": "EUR",
+        "status": "EXECUTED",
+        "title": "Electra Paris",
+        "subtitle": "",
+        "raw": {"id": "1", "timestamp": "2026-04-20T08:52:15.398+0000", "amount": {"value": -4.87, "currency": "EUR"}},
+    },
+    {
+        "id_externe": "2",
+        "date": "2026-04-21T10:00:00.000+0000",
+        "amount": "10.00",
+        "currency": "EUR",
+        "status": "CANCELED",
+        "title": "Should be ignored",
+        "raw": {"id": "2", "timestamp": "2026-04-21T10:00:00.000+0000", "amount": {"value": 10.0, "currency": "EUR"}},
+    },
+]
+
+# Format réel de l'API Trade Republic (retourné par timeline_transactions)
+SAMPLE_TR_REAL = [
+    {
+        "id": "2d3d0883-00b0-43aa-ad98-396f9bd5db6d",
+        "timestamp": "2026-05-11T07:35:47.510+0000",
+        "title": "Core Stoxx Europe 600 EUR (Acc)",
+        "subtitle": "Sparplan ausgeführt",
+        "amount": {"currency": "EUR", "value": -37, "fractionDigits": 2},
+        "status": "EXECUTED",
+        "eventType": "TRADING_SAVINGSPLAN_EXECUTED",
+    },
+    {
+        "id": "3511b9d2-37dd-5af0-ad8b-6d17d253d07b",
+        "timestamp": "2026-05-10T21:18:26.078+0000",
+        "title": "Maxoutil",
+        "subtitle": None,
+        "amount": {"currency": "EUR", "value": -164.68, "fractionDigits": 2},
+        "status": "EXECUTED",
+        "eventType": "CARD_TRANSACTION",
+    },
+    {
+        "id": "pending-1",
+        "timestamp": "2026-05-11T00:05:21.378+0000",
+        "title": "S&P 500 USD (Acc)",
+        "subtitle": "Sparplan ausstehend",
+        "amount": {"currency": "EUR", "value": -37, "fractionDigits": 2},
+        "status": "PENDING",  # doit être filtré
+        "eventType": "TRADING_SAVINGSPLAN_EXECUTION_PENDING",
+    },
+]
+
+
+def test_map_filters_and_amounts():
+    """Test du format mock pré-traité."""
+    mapped = map_pytr_to_actual(SAMPLE_MOCK)
+    assert isinstance(mapped, list)
+    # Only first tx should be present (second is CANCELED)
+    assert len(mapped) == 1
+    m = mapped[0]
+    assert m["date"] == "2026-04-20"
+    assert m["payee"] == "Electra Paris"
+    assert m["amount"] == -487
+
+
+def test_map_real_tr_format():
+    """Test du format réel renvoyé par l'API Trade Republic (timeline_transactions)."""
+    mapped = map_pytr_to_actual(SAMPLE_TR_REAL)
+    # La transaction PENDING doit être filtrée → 2 transactions
+    assert len(mapped) == 2
+
+    etf = mapped[0]
+    assert etf["date"] == "2026-05-11"
+    assert etf["payee"] == "Core Stoxx Europe 600 EUR (Acc)"
+    assert etf["amount"] == -3700   # -37 EUR → -3700 centimes
+    assert etf["currency"] == "EUR"
+    assert etf["source_id"] == "2d3d0883-00b0-43aa-ad98-396f9bd5db6d"
+
+    card = mapped[1]
+    assert card["date"] == "2026-05-10"
+    assert card["payee"] == "Maxoutil"
+    assert card["amount"] == -16468  # -164.68 EUR → -16468 centimes
+    assert card["source_id"] == "3511b9d2-37dd-5af0-ad8b-6d17d253d07b"
+
+
+def test_map_real_tr_format_memo():
+    """Le memo (subtitle) est correctement extrait."""
+    mapped = map_pytr_to_actual(SAMPLE_TR_REAL)
+    assert mapped[0]["memo"] == "Sparplan ausgeführt"
+    assert mapped[1]["memo"] == ""
