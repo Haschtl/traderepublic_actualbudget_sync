@@ -20,7 +20,8 @@ class Settings:
     actual_password: str = os.getenv("ACTUAL_PASSWORD", "")
     actual_budget_id: str = os.getenv("ACTUAL_BUDGET_ID", "")
     actual_account_name: str = os.getenv("ACTUAL_ACCOUNT_NAME", "")
+    # E2E Encryption support for Actual Budget files (AES-256-GCM)
+    actual_encryption_password: str = os.getenv("ACTUAL_ENCRYPTION_PASSWORD", "")
 
 
 settings = Settings()
-
