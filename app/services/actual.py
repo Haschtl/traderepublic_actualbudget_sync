@@ -11,6 +11,7 @@ def list_budget_files() -> List[Dict[str, Any]]:
     """Retourne la liste des fichiers budgets disponibles sur le serveur Actual.
 
     Utile pour trouver le bon ACTUAL_BUDGET_ID / ACTUAL_ACCOUNT_NAME.
+    Affiche également l'état de chiffrement de chaque fichier.
     """
     try:
         from actual import Actual
@@ -32,6 +33,7 @@ def list_budget_files() -> List[Dict[str, Any]]:
                 "group_id": getattr(f, "group_id", None),
                 "deleted": f.deleted,
                 "encrypted": getattr(f, "encrypt_key_id", None) is not None,
+                "encrypt_key_id": getattr(f, "encrypt_key_id", None),
             }
             for f in files.data
             if not f.deleted
@@ -43,12 +45,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
     - En `APP_MODE=mock` : simule l'envoi, retourne un résumé.
     - En mode production : utilise `actualpy` (pip install actualpy).
+    - Si `ACTUAL_ENCRYPTION_PASSWORD` est défini, le fichier sera chiffré avec AES-256-GCM.
 
     Variables d'environnement requises :
         ACTUAL_URL          URL du serveur Actual (ex : http://localhost:5006)
         ACTUAL_PASSWORD     Mot de passe Actual
         ACTUAL_BUDGET_ID    ID ou nom du budget (fichier)
         ACTUAL_ACCOUNT_NAME Nom du compte dans le budget (ex : "Trade Republic")
+        ACTUAL_ENCRYPTION_PASSWORD  (Optionnel) Mot de passe de chiffrement E2E (AES-256-GCM)
     """
     if settings.app_mode == "mock":
         return {"status": "mocked", "accepted": len(transactions)}
@@ -68,6 +72,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     password = settings.actual_password
     budget_id = settings.actual_budget_id
     account_name = settings.actual_account_name
+    encryption_password = settings.actual_encryption_password
 
     if not url:
         raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
@@ -87,6 +92,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             base_url=url,
             password=password or None,
             file=budget_id or None,
+            encryption_password=encryption_password or None,
         ) as actual:
             session = actual.session
             already_matched = []
@@ -155,7 +161,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
         hint = ""
         if available:
-            names = [f"{f['name']} (file_id={f['file_id']})" for f in available]
+            names = [f"{f['name']} (file_id={f['file_id']}, encrypted={f['encrypted']})" for f in available]
             hint = " Fichiers disponibles sur le serveur : " + ", ".join(names) + "."
         else:
             hint = " Appelez GET /actual/files pour lister les budgets disponibles."
@@ -169,4 +175,76 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     result: Dict = {"status": "ok", "inserted": inserted, "skipped": skipped, "duplicates": duplicates}
     if errors:
         result["errors"] = errors
+    
+    # Add encryption info to result
+    if encryption_password:
+        result["encryption"] = {
+            "status": "enabled",
+            "algorithm": "AES-256-GCM",
+            "note": "Budget file is encrypted with E2E encryption"
+        }
+    
     return result
+
+
+def encrypt_budget(encryption_password: str) -> Dict:
+    """Chiffre le fichier budget Actual avec un nouveau mot de passe.
+
+    ⚠️ ATTENTION: Cette opération réinitialise le fichier sur le serveur.
+    Assurez-vous d'avoir une copie locale avant d'exécuter cette opération.
+
+    Utilise AES-256-GCM (conforme à la spécification Actual Budget).
+
+    Variables d'environnement requises :
+        ACTUAL_URL          URL du serveur Actual
+        ACTUAL_PASSWORD     Mot de passe Actual
+        ACTUAL_BUDGET_ID    ID ou nom du budget
+        encryption_password Mot de passe de chiffrement à utiliser
+
+    Return:
+        Dict contenant le statut de l'opération de chiffrement
+    """
+    try:
+        from actual import Actual
+    except ImportError as e:
+        raise NotImplementedError(
+            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
+        )
+
+    url = settings.actual_url
+    password = settings.actual_password
+    budget_id = settings.actual_budget_id
+
+    if not url:
+        raise NotImplementedError("ACTUAL_URL non configuré.")
+    if not encryption_password:
+        raise NotImplementedError("Le mot de passe de chiffrement ne peut pas être vide.")
+
+    try:
+        with Actual(
+            base_url=url,
+            password=password or None,
+            file=budget_id or None,
+        ) as actual:
+            log.info("Début du chiffrement du budget: %s", budget_id or actual.file.name)
+            
+            # Encrypt the budget file
+            actual.encrypt(encryption_password)
+            
+            log.info("Chiffrement réussi du budget: %s", budget_id or actual.file.name)
+            
+            return {
+                "status": "success",
+                "message": f"Budget '{actual.file.name}' chiffré avec succès",
+                "algorithm": "AES-256-GCM",
+                "file_id": actual.file.file_id,
+                "encrypt_key_id": actual.file.encrypt_key_id,
+            }
+
+    except Exception as e:
+        log.error("Erreur lors du chiffrement du budget: %s", e, exc_info=True)
+        raise NotImplementedError(
+            "Impossible de chiffrer le budget. "
+            "Vérifiez que le fichier budget existe et que les credentials sont corrects. "
+            "Erreur: %s" % e
+        )
