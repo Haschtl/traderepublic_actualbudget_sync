@@ -8,6 +8,8 @@ services:
     environment:
       # Mode de fonctionnement : "production" pour le mode réel
       APP_MODE: production
+      # Cron 5 champs pour le sync automatique. Vide = désactivé.
+      SYNC_CRON: "0 0 * * *"
 
       # ── Trade Republic ─────────────────────────────────────────────────────
       # Numéro de téléphone associé à votre compte Trade Republic (format international)
@@ -22,6 +24,8 @@ services:
       ACTUAL_URL: "http://actual-budget:5006"
       # Mot de passe d'accès à Actual Budget
       ACTUAL_PASSWORD: "votre-mot-de-passe"
+      # Mot de passe de chiffrement du fichier budget Actual (laissez vide si non chiffré)
+      ACTUAL_ENCRYPTION_PASSWORD: ""
       # ID ou nom exact du fichier budget dans Actual
       # → Obtenez-le via GET /actual/files après le démarrage
       ACTUAL_BUDGET_ID: "Mon Budget"
@@ -44,4 +48,3 @@ volumes:
 #   actual_network:
 #     external: true
 #     name: actual_default
-

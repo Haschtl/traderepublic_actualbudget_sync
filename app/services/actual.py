@@ -38,6 +38,50 @@ def list_budget_files() -> List[Dict[str, Any]]:
         ]
 
 
+def encrypt_budget() -> Dict[str, Any]:
+    """Active le chiffrement du budget Actual configuré.
+
+    Cette opération utilise ACTUAL_ENCRYPTION_PASSWORD comme mot de passe
+    de chiffrement du fichier budget, distinct du mot de passe serveur.
+    """
+    if settings.app_mode == "mock":
+        return {"status": "mocked", "encrypted": True}
+
+    try:
+        from actual import Actual
+    except ImportError as e:
+        raise NotImplementedError("Le package 'actualpy' est requis. Erreur: %s" % e)
+
+    url = settings.actual_url
+    password = settings.actual_password
+    budget_id = settings.actual_budget_id
+    encryption_password = settings.actual_encryption_password
+
+    if not url:
+        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+    if not budget_id:
+        raise NotImplementedError("ACTUAL_BUDGET_ID non configuré. Ajoutez-le à votre .env.")
+    if not encryption_password:
+        raise NotImplementedError(
+            "ACTUAL_ENCRYPTION_PASSWORD non configuré. "
+            "Définissez-le avant d'activer le chiffrement du budget."
+        )
+
+    with Actual(
+        base_url=url,
+        password=password or None,
+        file=budget_id,
+        encryption_password=encryption_password,
+    ) as actual:
+        actual.encrypt(encryption_password)
+        return {
+            "status": "ok",
+            "file_id": actual.file.file_id,
+            "name": actual.file.name,
+            "encrypted": True,
+        }
+
+
 def push_transactions(transactions: List[Dict]) -> Dict:
     """Pousse les transactions mappées vers Actual Budget.
 
@@ -47,6 +91,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     Variables d'environnement requises :
         ACTUAL_URL          URL du serveur Actual (ex : http://localhost:5006)
         ACTUAL_PASSWORD     Mot de passe Actual
+        ACTUAL_ENCRYPTION_PASSWORD Mot de passe de chiffrement du budget (si activé)
         ACTUAL_BUDGET_ID    ID ou nom du budget (fichier)
         ACTUAL_ACCOUNT_NAME Nom du compte dans le budget (ex : "Trade Republic")
     """
@@ -66,6 +111,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
     url = settings.actual_url
     password = settings.actual_password
+    encryption_password = settings.actual_encryption_password
     budget_id = settings.actual_budget_id
     account_name = settings.actual_account_name
 
@@ -87,6 +133,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             base_url=url,
             password=password or None,
             file=budget_id or None,
+            encryption_password=encryption_password or None,
         ) as actual:
             session = actual.session
             already_matched = []

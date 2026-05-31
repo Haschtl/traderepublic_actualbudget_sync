@@ -16,7 +16,8 @@
         <button id="btn-connect" class="bg-yellow-600 text-white px-4 py-2 rounded mr-2">Connecter Trade Republic</button>
         <button id="btn-fetch" class="bg-blue-600 text-white px-4 py-2 rounded mr-2">Récupérer transactions</button>
         <button id="btn-map" class="bg-green-600 text-white px-4 py-2 rounded mr-2">Prévisualiser mapping</button>
-        <button id="btn-sync" class="bg-indigo-600 text-white px-4 py-2 rounded">Synchroniser</button>
+        <button id="btn-sync" class="bg-indigo-600 text-white px-4 py-2 rounded mr-2">Synchroniser</button>
+        <button id="btn-sync-history" class="bg-purple-700 text-white px-4 py-2 rounded">Sync all history</button>
       </div>
 
       <div class="mb-4">
@@ -94,6 +95,23 @@
         return data
       }
 
+      async function syncHistory() {
+        const confirmed = confirm('Importer toute l’historique Trade Republic peut prendre du temps. Continuer ?')
+        if (!confirmed) return
+
+        setStatus('Synchronisation de toute l’historique...')
+        const body = currentSessionId ? JSON.stringify({ session_id: currentSessionId }) : '{}'
+        const res = await fetch('/tr/sync-history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body
+        })
+        const data = await res.json()
+        if (!res.ok) { setStatus('Erreur sync history: ' + (data.detail || res.status)); return }
+        setStatus(`Sync history terminé: mapped=${data.mapped_count} pushed=${JSON.stringify(data.pushed)}`)
+        return data
+      }
+
       function setStatus(msg) {
         document.getElementById('status').textContent = msg
       }
@@ -133,7 +151,9 @@
       document.getElementById('btn-sync').addEventListener('click', async () => {
         await syncAll()
       })
+      document.getElementById('btn-sync-history').addEventListener('click', async () => {
+        await syncHistory()
+      })
     </script>
   </body>
 </html>
-

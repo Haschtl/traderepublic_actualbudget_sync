@@ -39,12 +39,14 @@ cp .env.example .env
 
 ```env
 APP_MODE=production
+SYNC_CRON=0 0 * * *
 
 TR_PHONE_NUMBER=+33600000000
 TR_PIN=1234
 
 ACTUAL_URL=http://your-actual-server:5006
 ACTUAL_PASSWORD=your-password
+ACTUAL_ENCRYPTION_PASSWORD=
 ACTUAL_BUDGET_ID=Mon Budget
 ACTUAL_ACCOUNT_NAME=Trade Republic
 ```
@@ -66,11 +68,13 @@ L'interface web est accessible sur **http://your-server:8000**.
 | Variable             | Obligatoire | Description                                                           | Exemple                      |
 |----------------------|:-----------:|-----------------------------------------------------------------------|------------------------------|
 | `APP_MODE`           | ✅           | `production` ou `mock` (simule les API)                               | `production`                 |
+| `SYNC_CRON`          |             | Cron 5 champs pour le sync automatique. Vide = désactivé              | `0 0 * * *`                  |
 | `TR_PHONE_NUMBER`    | ✅           | Numéro de téléphone Trade Republic (format international)             | `+33600000000`               |
 | `TR_PIN`             | ✅           | Code PIN Trade Republic (4 chiffres)                                  | `1234`                       |
 | `TR_COOKIES_FILE`    |             | Chemin du fichier de cookies TR (persistance de session)              | `/data/pytr_cookies.json`    |
 | `ACTUAL_URL`         | ✅           | URL de votre instance Actual Budget                                   | `http://localhost:5006`      |
 | `ACTUAL_PASSWORD`    |             | Mot de passe Actual Budget                                            | `my-secret`                  |
+| `ACTUAL_ENCRYPTION_PASSWORD` |     | Mot de passe du fichier budget chiffré Actual                         | `budget-secret`              |
 | `ACTUAL_BUDGET_ID`   | ✅           | Nom exact ou `file_id` du budget (voir `GET /actual/files`)           | `Mon Budget`                 |
 | `ACTUAL_ACCOUNT_NAME`| ✅           | Nom exact du compte dans lequel importer les transactions             | `Trade Republic`             |
 
@@ -137,6 +141,28 @@ Réponse :
 
 Les transactions déjà présentes dans Actual Budget sont automatiquement détectées et ignorées grâce à `reconcile_transaction`.
 
+### Synchronisation automatique
+
+Le service lance aussi un scheduler interne au démarrage. Par défaut, `SYNC_CRON=0 0 * * *` exécute `/tr/sync` une fois par jour à 00:00, selon l'heure du conteneur. Pour désactiver le scheduler, définissez `SYNC_CRON=`. Le format supporté est un cron à 5 champs avec `*`, listes, plages et pas, par exemple `*/30 * * * *` ou `0 */6 * * *`.
+
+Un verrou empêche deux synchronisations de tourner en parallèle. Si un sync manuel est nécessaire avec le même verrou, utilisez :
+
+```bash
+curl -X POST http://your-server:8000/tr/sync-now
+```
+
+### Budgets Actual chiffrés
+
+Si votre budget Actual est déjà chiffré, renseignez `ACTUAL_ENCRYPTION_PASSWORD` avec le mot de passe de chiffrement du fichier budget. Ce mot de passe est différent de `ACTUAL_PASSWORD`, qui sert uniquement à se connecter au serveur Actual.
+
+Pour activer le chiffrement sur le budget configuré dans `ACTUAL_BUDGET_ID`, définissez `ACTUAL_ENCRYPTION_PASSWORD`, puis appelez :
+
+```bash
+curl -X POST http://your-server:8000/actual/encrypt
+```
+
+Ensuite, les appels `/tr/sync` utiliseront automatiquement ce mot de passe pour ouvrir et synchroniser le budget chiffré.
+
 ---
 
 ## Référence des endpoints
@@ -151,7 +177,10 @@ Les transactions déjà présentes dans Actual Budget sont automatiquement déte
 | `POST`  | `/tr/fetch`       | Body: `{"session_id": "..."}` — récupère les transactions TR   |
 | `POST`  | `/tr/map`         | Body: liste de transactions pytr — retourne le mapping preview |
 | `POST`  | `/tr/sync`        | Body: `{"session_id": "..."}` — fetch + map + push complet     |
+| `POST`  | `/tr/sync-now`    | Lance un sync manuel avec le verrou du scheduler               |
+| `POST`  | `/tr/sync-history`| Body: `{"session_id": "..."}` — importe l'historique paginée   |
 | `GET`   | `/actual/files`   | Liste les budgets disponibles sur le serveur Actual Budget     |
+| `POST`  | `/actual/encrypt` | Active le chiffrement du budget configuré                      |
 | `GET`   | `/docs`           | Documentation interactive Swagger UI                           |
 
 ---
@@ -177,11 +206,13 @@ services:
       - "8000:8000"
     environment:
       APP_MODE: production
+      SYNC_CRON: "0 0 * * *"
       TR_PHONE_NUMBER: "+33600000000"
       TR_PIN: "1234"
       TR_COOKIES_FILE: /data/pytr_cookies.json
       ACTUAL_URL: "http://actual-budget:5006"
       ACTUAL_PASSWORD: "votre-mot-de-passe"
+      ACTUAL_ENCRYPTION_PASSWORD: ""
       ACTUAL_BUDGET_ID: "Mon Budget"
       ACTUAL_ACCOUNT_NAME: "Trade Republic"
     volumes:

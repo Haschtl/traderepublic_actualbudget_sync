@@ -18,9 +18,10 @@ class Settings:
     tr_cookies_file: str = os.getenv("TR_COOKIES_FILE", "./pytr_cookies.json")
     actual_url: str = os.getenv("ACTUAL_URL", "")
     actual_password: str = os.getenv("ACTUAL_PASSWORD", "")
+    actual_encryption_password: str = os.getenv("ACTUAL_ENCRYPTION_PASSWORD", "")
     actual_budget_id: str = os.getenv("ACTUAL_BUDGET_ID", "")
     actual_account_name: str = os.getenv("ACTUAL_ACCOUNT_NAME", "")
+    sync_cron: str = os.getenv("SYNC_CRON", "0 0 * * *")
 
 
 settings = Settings()
-

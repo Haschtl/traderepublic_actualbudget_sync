@@ -14,6 +14,8 @@ from app.services.trade_republic import (
 from typing import Optional
 from app.services.actual import push_transactions as actual_push
 from app.services.actual import list_budget_files as actual_list_files
+from app.services.actual import encrypt_budget as actual_encrypt_budget
+from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.core.config import settings
 
 router = APIRouter()
@@ -117,6 +119,18 @@ async def list_actual_files():
     return {"files": files}
 
 
+@router.post("/actual/encrypt")
+async def encrypt_actual_budget():
+    """Active le chiffrement du budget Actual configuré."""
+    try:
+        result = await asyncio.to_thread(actual_encrypt_budget)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return result
+
+
 @router.get("/tr/status")
 async def tr_status():
     return tr_get_status()
@@ -133,3 +147,15 @@ async def sync_to_actual(payload: Optional[dict] = None):
     result = await asyncio.to_thread(actual_push, mapped)
     return {"mapped_count": len(mapped), "pushed": result}
 
+
+@router.post("/tr/sync-now")
+async def sync_now():
+    """Lance le même sync que le scheduler, avec verrou anti-parallèle."""
+    return await run_scheduled_sync()
+
+
+@router.post("/tr/sync-history")
+async def sync_history(payload: Optional[dict] = None):
+    """Récupère toute l'historique TR paginée, mappe, puis pousse vers Actual."""
+    session_id = (payload or {}).get("session_id") or None
+    return await run_history_sync(session_id)

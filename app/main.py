@@ -1,10 +1,23 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
 from app.api.routes import router as api_router
+from app.services.scheduler import start_scheduler, stop_scheduler
 
-app = FastAPI(title="TR → Actual Sync (backend)")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    scheduler_task = start_scheduler()
+    try:
+        yield
+    finally:
+        await stop_scheduler(scheduler_task)
+
+
+app = FastAPI(title="TR → Actual Sync (backend)", lifespan=lifespan)
 
 app.include_router(api_router, prefix="", tags=["tr-sync"])
 
@@ -31,5 +44,4 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
-
 

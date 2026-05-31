@@ -311,6 +311,77 @@ def fetch_transactions(session_id: str | None = None) -> List[Dict]:
         )
 
 
+def fetch_all_transactions(session_id: str | None = None, max_pages: int = 1000) -> List[Dict]:
+    """Récupère toute l'historique disponible via la pagination timelineTransactions."""
+    if settings.app_mode == "mock":
+        return _SAMPLE
+
+    _load_sessions()
+
+    resolved_sid = session_id
+    cookies_file = None
+
+    if not resolved_sid:
+        resolved_sid, cookies_file = _find_connected_session()
+        if not resolved_sid:
+            raise NotImplementedError(
+                "Aucune session Trade Republic active. "
+                "Connectez-vous via /tr/connect puis /tr/complete avant de récupérer les transactions."
+            )
+        log.info("fetch_all_transactions: utilisation de la session connectée %s", resolved_sid)
+
+    session = SESSIONS.get(resolved_sid, {})
+    cookies_file = cookies_file or session.get("cookies_file") or _cookies_file_for_session(resolved_sid)
+
+    api = _get_api_client(resolved_sid)
+    if api is None:
+        log.warning("fetch_all_transactions: instance API non trouvée en mémoire — reconstruction depuis cookies")
+        api = _build_api_client(cookies_file)
+        _store_api_client(resolved_sid, api)
+
+    if not api.resume_websession():
+        log.warning("fetch_all_transactions: resume_websession a échoué; les cookies sont peut-être expirés")
+
+    items: list[Dict] = []
+    seen_ids: set[str] = set()
+    after = None
+
+    try:
+        for page in range(1, max_pages + 1):
+            _reset_api_async_state(api)
+            response = api.run_blocking(api.timeline_transactions(after), timeout=30)
+            if not isinstance(response, dict):
+                log.warning("fetch_all_transactions: format de réponse inattendu page %s: %s", page, response)
+                break
+
+            page_items = response.get("items") or []
+            log.info("fetch_all_transactions: page %s reçue avec %d transaction(s)", page, len(page_items))
+
+            for item in page_items:
+                item_id = item.get("id")
+                if item_id and item_id in seen_ids:
+                    continue
+                if item_id:
+                    seen_ids.add(item_id)
+                items.append(item)
+
+            next_after = (response.get("cursors") or {}).get("after")
+            if not page_items or not next_after or next_after == after:
+                break
+            after = next_after
+        else:
+            log.warning("fetch_all_transactions: max_pages=%s atteint, historique possiblement incomplet", max_pages)
+
+        log.info("fetch_all_transactions: %d transaction(s) récupérée(s) au total", len(items))
+        return items
+
+    except Exception as e:
+        raise NotImplementedError(
+            "Échec lors de la récupération de l'historique Trade Republic. "
+            "Vérifiez la session et la connexion. Erreur: %s" % e
+        )
+
+
 def start_login() -> Dict:
     """Démarre le flux d'authentification Trade Republic.
 
@@ -499,5 +570,4 @@ def resend_login(session_id: str) -> Dict:
         raise NotImplementedError("Échec du renvoi du code: %s" % e)
 
     raise NotImplementedError("resend_weblogin absent de pytr.")
-
 

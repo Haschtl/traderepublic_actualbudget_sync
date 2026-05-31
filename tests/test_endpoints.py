@@ -54,3 +54,8 @@ def test_complete_requires_code():
     assert r.status_code == 400
 
 
+def test_encrypt_budget_mock():
+    r = client.post('/actual/encrypt')
+    assert r.status_code == 200
+    assert r.json() == {'status': 'mocked', 'encrypted': True}
+
