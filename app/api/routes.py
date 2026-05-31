@@ -14,6 +14,7 @@ from app.services.trade_republic import (
 from typing import Optional
 from app.services.actual import push_transactions as actual_push
 from app.services.actual import list_budget_files as actual_list_files
+from app.services.actual import encrypt_budget as actual_encrypt_budget
 from app.core.config import settings
 
 router = APIRouter()
@@ -107,6 +108,7 @@ async def list_actual_files():
 
     Utile pour trouver le bon ACTUAL_BUDGET_ID (file_id ou name exact)
     et les noms de comptes disponibles à mettre dans ACTUAL_ACCOUNT_NAME.
+    Affiche également l'état de chiffrement de chaque fichier.
     """
     try:
         files = await asyncio.to_thread(actual_list_files)
@@ -126,6 +128,8 @@ async def tr_status():
 async def sync_to_actual(payload: Optional[dict] = None):
     """Récupère, mappe, et pousse vers Actual (mode mock possible).
     Retourne un résumé de l'opération.
+    
+    Si ACTUAL_ENCRYPTION_PASSWORD est défini, le budget sera chiffré avec AES-256-GCM.
     """
     session_id = (payload or {}).get("session_id") or None
     txs = await asyncio.to_thread(tr_fetch, session_id)
@@ -133,3 +137,39 @@ async def sync_to_actual(payload: Optional[dict] = None):
     result = await asyncio.to_thread(actual_push, mapped)
     return {"mapped_count": len(mapped), "pushed": result}
 
+
+@router.post("/actual/encrypt")
+async def encrypt_actual_budget(payload: Optional[dict] = None):
+    """Chiffre le fichier budget Actual avec le mot de passe fourni.
+
+    ⚠️ ATTENTION: Cette opération réinitialise le fichier sur le serveur.
+    Assurez-vous d'avoir une copie locale avant d'exécuter.
+
+    Body optionnel: {'encryption_password': '...'} 
+    Si non fourni, utilisera ACTUAL_ENCRYPTION_PASSWORD de la configuration.
+
+    Utilise AES-256-GCM (conforme à la spécification Actual Budget).
+
+    Retourne:
+        - status: "success"
+        - message: Description du succès
+        - algorithm: "AES-256-GCM"
+        - file_id: ID du fichier chiffré
+        - encrypt_key_id: ID de la clé de chiffrement
+    """
+    encryption_password = (payload or {}).get("encryption_password") or settings.actual_encryption_password
+    
+    if not encryption_password:
+        raise HTTPException(
+            status_code=400, 
+            detail="Aucun mot de passe de chiffrement fourni. "
+                   "Fournissez 'encryption_password' dans le body ou définissez ACTUAL_ENCRYPTION_PASSWORD."
+        )
+    
+    try:
+        result = await asyncio.to_thread(actual_encrypt_budget, encryption_password)
+        return result
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
