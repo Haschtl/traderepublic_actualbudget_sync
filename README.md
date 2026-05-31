@@ -21,15 +21,15 @@ Service **FastAPI** permettant de synchroniser les transactions **Trade Republic
 L'image est publiée sur GitHub Container Registry :
 
 ```
-ghcr.io/aielloine/traderepublic_actualbudget_sync:latest
+ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
 ```
 
 ### 1. Récupérer les fichiers de déploiement
 
 ```bash
 mkdir tr-sync && cd tr-sync
-curl -O https://raw.githubusercontent.com/aielloine/traderepublic_actualbudget_sync/main/docker/docker-compose.yml
-curl -O https://raw.githubusercontent.com/aielloine/traderepublic_actualbudget_sync/main/docker/.env.example
+curl -O https://raw.githubusercontent.com/haschtl/traderepublic_actualbudget_sync/main/docker/docker-compose.yml
+curl -O https://raw.githubusercontent.com/haschtl/traderepublic_actualbudget_sync/main/docker/.env.example
 cp .env.example .env
 ```
 
@@ -211,7 +211,7 @@ services:
       - sync_network
 
   tr-sync:
-    image: ghcr.io/aielloine/traderepublic_actualbudget_sync:latest
+    image: ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
     ports:
       - "127.0.0.1:8000:8000"
     environment:
@@ -249,7 +249,7 @@ networks:
 
 ```bash
 # Cloner le repo
-git clone https://github.com/aielloine/traderepublic_actualbudget_sync.git
+git clone https://github.com/haschtl/traderepublic_actualbudget_sync.git
 cd traderepublic_actualbudget_sync
 
 # Créer l'environnement virtuel

@@ -1,6 +1,6 @@
 services:
   tr-sync:
-    image: ghcr.io/aielloine/traderepublic_actualbudget_sync:latest
+    image: ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
     container_name: tr-actual-sync
     restart: unless-stopped
     ports:
