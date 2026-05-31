@@ -58,7 +58,8 @@ def _parse_amount(tx: Dict[str, Any]) -> int:
             value = raw_amount.get("value")
 
     try:
-        return int(round(float(value) * 100))
+        return value
+        # return int(round(float(value) * 100))
     except Exception:
         return 0
 
