@@ -36,8 +36,17 @@ def _parse_amount(tx: Dict[str, Any]) -> int:
         if isinstance(amount_field, (int, float)):
             value = float(amount_field)
         elif isinstance(amount_field, str):
+            normalized = (
+                amount_field.strip()
+                .replace("€", "")
+                .replace(" ", "")
+            )
+
+            # deutsches Format
+            if "," in normalized:
+                normalized = normalized.replace(".", "").replace(",", ".")
             try:
-                value = float(amount_field)
+                value = float(normalized)
             except Exception:
                 value = 0.0
 
