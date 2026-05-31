@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from datetime import datetime
+import json
 
 
 def _parse_date(tx: Dict[str, Any]) -> str:
@@ -88,36 +89,90 @@ def _extract_source_id(tx: Dict[str, Any]) -> str | None:
     )
 
 
+def _extract_event_type(tx: Dict[str, Any]) -> str:
+    raw = tx.get("raw") or {}
+    raw_event_type = raw.get("eventType") if isinstance(raw, dict) else None
+    return tx.get("eventType") or raw_event_type or tx.get("type") or ""
+
+
+def _looks_like_transfer(tx: Dict[str, Any], event_type: str, payee: str) -> bool:
+    haystack = " ".join(
+        str(value or "")
+        for value in [
+            event_type,
+            payee,
+            tx.get("subtitle"),
+            tx.get("category"),
+            tx.get("type"),
+        ]
+    ).upper()
+    transfer_markers = (
+        "TRANSFER",
+        "DEPOSIT",
+        "WITHDRAW",
+        "EINZAHL",
+        "AUSZAHL",
+        "SEPA",
+        "CASH_IN",
+        "CASH_OUT",
+    )
+    return any(marker in haystack for marker in transfer_markers)
+
+
+def _build_memo(tx: Dict[str, Any], event_type: str, status: str) -> str:
+    parts = []
+    subtitle = tx.get("subtitle")
+    if subtitle:
+        parts.append(str(subtitle))
+    if event_type:
+        parts.append(f"TR eventType: {event_type}")
+    if status:
+        parts.append(f"TR status: {status}")
+
+    try:
+        details = json.dumps(tx, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:
+        details = str(tx)
+    parts.append("Trade Republic raw: " + details)
+    return "\n".join(parts)
+
+
 def map_pytr_to_actual(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Mappe les items TR (format réel ou mock) vers le schéma Actual.
 
     Règles :
-    - Filtrer status != 'EXECUTED'
+    - Filtrer status sauf EXECUTED/PENDING
     - Date → YYYY-MM-DD (depuis 'date' ou 'timestamp')
     - Montant → entier en centimes
     - payee ← title
-    - subtitle → memo
+    - eventType + détails TR complets → memo
     - source_id ← id ou id_externe
     """
     out = []
     for tx in transactions:
         status = (tx.get("status") or "").upper()
-        if status and status != "EXECUTED":
+        if status and status not in {"EXECUTED", "PENDING"}:
             continue
 
         date = _parse_date(tx)
         amount = _parse_amount(tx)
         payee = _extract_payee(tx) or "(unknown)"
-        memo = tx.get("subtitle") or ""
         source_id = _extract_source_id(tx)
         currency = _extract_currency(tx)
+        event_type = _extract_event_type(tx)
+        pending = status == "PENDING"
+        cleared = status == "EXECUTED"
 
         out.append({
             "date": date,
             "payee": payee,
             "amount": amount,
             "currency": currency,
-            "memo": memo,
+            "memo": _build_memo(tx, event_type, status),
             "source_id": source_id,
+            "event_type": event_type,
+            "cleared": cleared,
+            "pending": pending,
+            "is_transfer": _looks_like_transfer(tx, event_type, payee),
         })
     return out

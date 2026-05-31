@@ -1,11 +1,151 @@
 import datetime
 import logging
+from decimal import Decimal
 from typing import List, Dict, Any
 
 from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
+
+def _is_truthy(value: Any) -> bool:
+    return str(value).lower() in {"1", "true", "yes", "on"}
+
+
+def _find_transaction_by_financial_id(session, imported_id: str | None):
+    if not imported_id:
+        return None
+    try:
+        from actual.database import Transactions
+        from sqlmodel import select
+    except ImportError:
+        return None
+    return session.exec(
+        select(Transactions).where(Transactions.financial_id == imported_id, Transactions.tombstone == 0)
+    ).first()
+
+
+def _find_matching_transfer_counterpart(session, account, date: datetime.date, amount_eur: float):
+    """Find an existing unlinked transaction that can become the other side of a transfer."""
+    try:
+        from actual.database import Transactions
+        from actual.utils.conversions import date_to_int, decimal_to_cents
+        from sqlmodel import select
+    except ImportError:
+        return None
+
+    target_amount = decimal_to_cents(Decimal(str(amount_eur)))
+    start = date_to_int(date - datetime.timedelta(days=3))
+    end = date_to_int(date + datetime.timedelta(days=3))
+
+    return session.exec(
+        select(Transactions)
+        .where(Transactions.acct == account.id)
+        .where(Transactions.amount == target_amount)
+        .where(Transactions.date >= start)
+        .where(Transactions.date <= end)
+        .where(Transactions.transferred_id.is_(None))
+        .where(Transactions.tombstone == 0)
+        .where(Transactions.is_parent == 0)
+    ).first()
+
+
+def _create_or_link_transfer(
+    session,
+    date: datetime.date,
+    account,
+    transfer_account,
+    amount_eur: float,
+    notes: str,
+    imported_id: str | None,
+    payee: str,
+    cleared: bool,
+    pending: bool,
+):
+    from actual.queries import create_transaction_from_ids, create_transfer
+
+    if amount_eur > 0:
+        source_account = transfer_account
+        dest_account = account
+        transfer_amount = amount_eur
+        main_amount = amount_eur
+        counterpart_amount = -amount_eur
+    else:
+        source_account = account
+        dest_account = transfer_account
+        transfer_amount = abs(amount_eur)
+        main_amount = amount_eur
+        counterpart_amount = abs(amount_eur)
+
+    existing_counterpart = _find_matching_transfer_counterpart(
+        session,
+        transfer_account,
+        date,
+        counterpart_amount,
+    )
+
+    if existing_counterpart is not None:
+        main_tx = create_transaction_from_ids(
+            session,
+            date,
+            account.id,
+            transfer_account.payee.id,
+            notes,
+            None,
+            main_amount,
+            imported_id,
+            cleared,
+            payee,
+            process_payee=False,
+        )
+        main_tx.pending = int(pending)
+        existing_counterpart.transferred_id = main_tx.id
+        main_tx.transferred_id = existing_counterpart.id
+        existing_counterpart.payee_id = account.payee.id
+        existing_counterpart.category_id = None
+        existing_counterpart.notes = existing_counterpart.notes or notes
+        existing_counterpart.cleared = int(cleared)
+        existing_counterpart.pending = int(pending)
+        if imported_id and not existing_counterpart.financial_id:
+            existing_counterpart.financial_id = f"{imported_id}:counterpart"
+        return main_tx, existing_counterpart, True
+    if settings.autocreate_transfer is True:
+        source_tx, dest_tx = create_transfer(
+            session,
+            date=date,
+            source_account=source_account,
+            dest_account=dest_account,
+            amount=transfer_amount,
+            notes=notes,
+        )
+        main_tx = dest_tx if amount_eur > 0 else source_tx
+        counterpart_tx = source_tx if amount_eur > 0 else dest_tx
+        main_tx.financial_id = imported_id
+        counterpart_tx.financial_id = f"{imported_id}:counterpart" if imported_id else None
+        main_tx.imported_description = payee
+        counterpart_tx.imported_description = payee
+        main_tx.cleared = int(cleared)
+        counterpart_tx.cleared = int(cleared)
+        main_tx.pending = int(pending)
+        counterpart_tx.pending = int(pending)
+        return main_tx, counterpart_tx, False
+    else:
+        main_tx = create_transaction_from_ids(
+            session,
+            date,
+            account.id,
+            transfer_account.payee.id,
+            notes,
+            None,
+            main_amount,
+            imported_id,
+            cleared,
+            payee,
+            process_payee=False,
+        )
+        main_tx.pending = int(pending)
+        main_tx.imported_description = payee
+        return main_tx, None, False
 
 def list_budget_files() -> List[Dict[str, Any]]:
     """Retourne la liste des fichiers budgets disponibles sur le serveur Actual.
@@ -103,7 +243,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
     try:
         from actual import Actual
-        from actual.queries import reconcile_transaction
+        from actual.queries import create_transfer, get_or_create_account, reconcile_transaction
     except ImportError as e:
         raise NotImplementedError(
             "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
@@ -114,6 +254,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     encryption_password = settings.actual_encryption_password
     budget_id = settings.actual_budget_id
     account_name = settings.actual_account_name
+    transfer_account_name = settings.actual_transfer_account_name
 
     if not url:
         raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
@@ -136,6 +277,12 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             encryption_password=encryption_password or None,
         ) as actual:
             session = actual.session
+            account = get_or_create_account(session, account_name)
+            transfer_account = (
+                get_or_create_account(session, transfer_account_name)
+                if transfer_account_name
+                else None
+            )
             already_matched = []
 
             for tx in transactions:
@@ -158,21 +305,52 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                 # actualpy attend des euros (float) → on divise par 100.
                 amount_eur = (tx.get("amount") or 0) / 100
                 imported_id = tx.get("source_id") or None
+                cleared = bool(tx.get("cleared"))
+                pending = _is_truthy(tx.get("pending"))
+                is_transfer = _is_truthy(tx.get("is_transfer"))
 
                 try:
+                    if is_transfer and transfer_account is not None and amount_eur:
+                        if _find_transaction_by_financial_id(session, imported_id):
+                            duplicates += 1
+                            log.debug("Transfert doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            continue
+
+                        result_tx, counterpart_tx, linked_existing = _create_or_link_transfer(
+                            session,
+                            date=date,
+                            account=account,
+                            transfer_account=transfer_account,
+                            amount_eur=amount_eur,
+                            notes=notes,
+                            imported_id=imported_id,
+                            payee=payee,
+                            cleared=cleared,
+                            pending=pending,
+                        )
+                        inserted += 1
+                        if linked_existing:
+                            log.info(
+                                "Transfert lié à une transaction existante du compte opposé (imported_id=%s)",
+                                imported_id,
+                            )
+                        continue
+
                     result_tx = reconcile_transaction(
                         session,
                         date=date,
-                        account=account_name,
+                        account=account,
                         payee=payee,
                         notes=notes,
                         amount=amount_eur,
                         imported_id=imported_id,
-                        cleared=True,
+                        cleared=cleared,
                         imported_payee=payee,
                         update_existing=False,
                         already_matched=already_matched,
                     )
+                    result_tx.pending = int(pending)
+                    result_tx.cleared = int(cleared)
                     already_matched.append(result_tx)
 
                     # Si la transaction est dans session.new, elle vient d'être créée.

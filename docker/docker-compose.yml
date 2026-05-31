@@ -4,12 +4,15 @@ services:
     container_name: tr-actual-sync
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       # Mode de fonctionnement : "production" pour le mode réel
       APP_MODE: production
       # Cron 5 champs pour le sync automatique. Vide = désactivé.
-      SYNC_CRON: "0 0 * * *"
+      SYNC_CRON: "0 1 * * *"
+      # Optional : protège l'UI/API si les deux valeurs sont non vides
+      BASIC_AUTH_USERNAME: ""
+      BASIC_AUTH_PASSWORD: ""
 
       # ── Trade Republic ─────────────────────────────────────────────────────
       # Numéro de téléphone associé à votre compte Trade Republic (format international)
@@ -31,6 +34,8 @@ services:
       ACTUAL_BUDGET_ID: "Mon Budget"
       # Nom exact du compte dans lequel importer les transactions
       ACTUAL_ACCOUNT_NAME: "Trade Republic"
+      # Optional : compte opposé pour importer dépôts/retraits comme transfers
+      ACTUAL_TRANSFER_ACCOUNT_NAME: ""
 
     volumes:
       # Persistance des cookies Trade Republic entre les redémarrages

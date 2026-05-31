@@ -20,6 +20,17 @@
         <button id="btn-sync-history" class="bg-purple-700 text-white px-4 py-2 rounded">Sync all history</button>
       </div>
 
+      <div class="mb-4 flex flex-wrap items-end gap-3">
+        <label class="block">
+          <span class="block mb-1 text-sm">History from</span>
+          <input id="history-from" type="date" class="border rounded px-2 py-1" />
+        </label>
+        <label class="block">
+          <span class="block mb-1 text-sm">History to</span>
+          <input id="history-to" type="date" class="border rounded px-2 py-1" />
+        </label>
+      </div>
+
       <div class="mb-4">
         <label class="block mb-1">Code / PIN (si requis)</label>
         <input id="otp" type="text" class="border rounded px-2 py-1" placeholder="Entrez le code reçu" />
@@ -100,7 +111,17 @@
         if (!confirmed) return
 
         setStatus('Synchronisation de toute l’historique...')
-        const body = currentSessionId ? JSON.stringify({ session_id: currentSessionId }) : '{}'
+        const payload = {}
+        if (currentSessionId) payload.session_id = currentSessionId
+        const fromDate = document.getElementById('history-from').value
+        const toDate = document.getElementById('history-to').value
+        if (fromDate && toDate && fromDate > toDate) {
+          setStatus('Erreur: History from doit être avant History to')
+          return
+        }
+        if (fromDate) payload.from_date = fromDate
+        if (toDate) payload.to_date = toDate
+        const body = JSON.stringify(payload)
         const res = await fetch('/tr/sync-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -39,7 +39,9 @@ cp .env.example .env
 
 ```env
 APP_MODE=production
-SYNC_CRON=0 0 * * *
+SYNC_CRON=0 1 * * *
+BASIC_AUTH_USERNAME=
+BASIC_AUTH_PASSWORD=
 
 TR_PHONE_NUMBER=+33600000000
 TR_PIN=1234
@@ -49,6 +51,7 @@ ACTUAL_PASSWORD=your-password
 ACTUAL_ENCRYPTION_PASSWORD=
 ACTUAL_BUDGET_ID=Mon Budget
 ACTUAL_ACCOUNT_NAME=Trade Republic
+ACTUAL_TRANSFER_ACCOUNT_NAME=
 ```
 
 > **Astuce** : Si vous ne connaissez pas votre `ACTUAL_BUDGET_ID`, laissez-le vide, démarrez le service, puis appelez `GET /actual/files` pour lister les budgets disponibles.
@@ -69,6 +72,8 @@ L'interface web est accessible sur **http://your-server:8000**.
 |----------------------|:-----------:|-----------------------------------------------------------------------|------------------------------|
 | `APP_MODE`           | ✅           | `production` ou `mock` (simule les API)                               | `production`                 |
 | `SYNC_CRON`          |             | Cron 5 champs pour le sync automatique. Vide = désactivé              | `0 0 * * *`                  |
+| `BASIC_AUTH_USERNAME`|             | Utilisateur Basic Auth optionnel pour protéger UI/API                 | `admin`                      |
+| `BASIC_AUTH_PASSWORD`|             | Mot de passe Basic Auth optionnel                                     | `change-me`                  |
 | `TR_PHONE_NUMBER`    | ✅           | Numéro de téléphone Trade Republic (format international)             | `+33600000000`               |
 | `TR_PIN`             | ✅           | Code PIN Trade Republic (4 chiffres)                                  | `1234`                       |
 | `TR_COOKIES_FILE`    |             | Chemin du fichier de cookies TR (persistance de session)              | `/data/pytr_cookies.json`    |
@@ -77,6 +82,7 @@ L'interface web est accessible sur **http://your-server:8000**.
 | `ACTUAL_ENCRYPTION_PASSWORD` |     | Mot de passe du fichier budget chiffré Actual                         | `budget-secret`              |
 | `ACTUAL_BUDGET_ID`   | ✅           | Nom exact ou `file_id` du budget (voir `GET /actual/files`)           | `Mon Budget`                 |
 | `ACTUAL_ACCOUNT_NAME`| ✅           | Nom exact du compte dans lequel importer les transactions             | `Trade Republic`             |
+| `ACTUAL_TRANSFER_ACCOUNT_NAME` |   | Compte opposé optionnel pour importer dépôts/retraits comme transfers | `Compte courant`             |
 
 ---
 
@@ -141,9 +147,13 @@ Réponse :
 
 Les transactions déjà présentes dans Actual Budget sont automatiquement détectées et ignorées grâce à `reconcile_transaction`.
 
+Le compte cible `ACTUAL_ACCOUNT_NAME` est créé automatiquement s'il n'existe pas encore. Les transactions `EXECUTED` sont importées comme cleared, les transactions `PENDING` comme pending/non-cleared. Les notes Actual contiennent le `eventType`, le status et les détails bruts Trade Republic de la transaction.
+
+Si `ACTUAL_TRANSFER_ACCOUNT_NAME` est défini, les dépôts/retraits Trade Republic reconnus comme transfers sont importés comme vrais transfers Actual entre ce compte et `ACTUAL_ACCOUNT_NAME`. Le compte opposé est aussi créé automatiquement si besoin. Avant de créer la contre-écriture, l'import cherche dans le compte opposé une transaction existante non liée avec le montant inverse et une date à ±3 jours ; si elle existe, elle est reliée comme transfer au lieu de créer un doublon.
+
 ### Synchronisation automatique
 
-Le service lance aussi un scheduler interne au démarrage. Par défaut, `SYNC_CRON=0 0 * * *` exécute `/tr/sync` une fois par jour à 00:00, selon l'heure du conteneur. Pour désactiver le scheduler, définissez `SYNC_CRON=`. Le format supporté est un cron à 5 champs avec `*`, listes, plages et pas, par exemple `*/30 * * * *` ou `0 */6 * * *`.
+Le service lance aussi un scheduler interne au démarrage. Par défaut, `SYNC_CRON=0 1 * * *` exécute `/tr/sync` une fois par jour à 00:00, selon l'heure du conteneur. Pour désactiver le scheduler, définissez `SYNC_CRON=`. Le format supporté est un cron à 5 champs avec `*`, listes, plages et pas, par exemple `*/30 * * * *` ou `0 */6 * * *`.
 
 Un verrou empêche deux synchronisations de tourner en parallèle. Si un sync manuel est nécessaire avec le même verrou, utilisez :
 
@@ -178,7 +188,7 @@ Ensuite, les appels `/tr/sync` utiliseront automatiquement ce mot de passe pour 
 | `POST`  | `/tr/map`         | Body: liste de transactions pytr — retourne le mapping preview |
 | `POST`  | `/tr/sync`        | Body: `{"session_id": "..."}` — fetch + map + push complet     |
 | `POST`  | `/tr/sync-now`    | Lance un sync manuel avec le verrou du scheduler               |
-| `POST`  | `/tr/sync-history`| Body: `{"session_id": "..."}` — importe l'historique paginée   |
+| `POST`  | `/tr/sync-history`| Body: `{"session_id": "...", "from_date": "YYYY-MM-DD", "to_date": "YYYY-MM-DD"}` — importe l'historique paginée |
 | `GET`   | `/actual/files`   | Liste les budgets disponibles sur le serveur Actual Budget     |
 | `POST`  | `/actual/encrypt` | Active le chiffrement du budget configuré                      |
 | `GET`   | `/docs`           | Documentation interactive Swagger UI                           |
@@ -203,10 +213,12 @@ services:
   tr-sync:
     image: ghcr.io/aielloine/traderepublic_actualbudget_sync:latest
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       APP_MODE: production
-      SYNC_CRON: "0 0 * * *"
+      SYNC_CRON: "0 1 * * *"
+      BASIC_AUTH_USERNAME: ""
+      BASIC_AUTH_PASSWORD: ""
       TR_PHONE_NUMBER: "+33600000000"
       TR_PIN: "1234"
       TR_COOKIES_FILE: /data/pytr_cookies.json
@@ -215,6 +227,7 @@ services:
       ACTUAL_ENCRYPTION_PASSWORD: ""
       ACTUAL_BUDGET_ID: "Mon Budget"
       ACTUAL_ACCOUNT_NAME: "Trade Republic"
+      ACTUAL_TRANSFER_ACCOUNT_NAME: ""
     volumes:
       - tr_data:/data
     depends_on:

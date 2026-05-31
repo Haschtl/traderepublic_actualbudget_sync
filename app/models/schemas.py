@@ -52,3 +52,7 @@ class ActualTransaction(BaseModel):
     currency: Optional[str] = "EUR"
     memo: Optional[str] = None
     source_id: Optional[str] = None
+    event_type: Optional[str] = None
+    cleared: Optional[bool] = True
+    pending: Optional[bool] = False
+    is_transfer: Optional[bool] = False

@@ -50,7 +50,7 @@ SAMPLE_TR_REAL = [
         "title": "S&P 500 USD (Acc)",
         "subtitle": "Sparplan ausstehend",
         "amount": {"currency": "EUR", "value": -37, "fractionDigits": 2},
-        "status": "PENDING",  # doit être filtré
+        "status": "PENDING",
         "eventType": "TRADING_SAVINGSPLAN_EXECUTION_PENDING",
     },
 ]
@@ -71,8 +71,8 @@ def test_map_filters_and_amounts():
 def test_map_real_tr_format():
     """Test du format réel renvoyé par l'API Trade Republic (timeline_transactions)."""
     mapped = map_pytr_to_actual(SAMPLE_TR_REAL)
-    # La transaction PENDING doit être filtrée → 2 transactions
-    assert len(mapped) == 2
+    # La transaction PENDING est importable comme transaction non-cleared.
+    assert len(mapped) == 3
 
     etf = mapped[0]
     assert etf["date"] == "2026-05-11"
@@ -87,9 +87,15 @@ def test_map_real_tr_format():
     assert card["amount"] == -16468  # -164.68 EUR → -16468 centimes
     assert card["source_id"] == "3511b9d2-37dd-5af0-ad8b-6d17d253d07b"
 
+    pending = mapped[2]
+    assert pending["pending"] is True
+    assert pending["cleared"] is False
+
 
 def test_map_real_tr_format_memo():
     """Le memo (subtitle) est correctement extrait."""
     mapped = map_pytr_to_actual(SAMPLE_TR_REAL)
-    assert mapped[0]["memo"] == "Sparplan ausgeführt"
-    assert mapped[1]["memo"] == ""
+    assert "Sparplan ausgeführt" in mapped[0]["memo"]
+    assert "TR eventType: TRADING_SAVINGSPLAN_EXECUTED" in mapped[0]["memo"]
+    assert "Trade Republic raw:" in mapped[0]["memo"]
+    assert "TR eventType: CARD_TRANSACTION" in mapped[1]["memo"]

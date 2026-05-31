@@ -157,5 +157,8 @@ async def sync_now():
 @router.post("/tr/sync-history")
 async def sync_history(payload: Optional[dict] = None):
     """Récupère toute l'historique TR paginée, mappe, puis pousse vers Actual."""
-    session_id = (payload or {}).get("session_id") or None
-    return await run_history_sync(session_id)
+    payload = payload or {}
+    session_id = payload.get("session_id") or None
+    from_date = payload.get("from_date") or None
+    to_date = payload.get("to_date") or None
+    return await run_history_sync(session_id, from_date=from_date, to_date=to_date)

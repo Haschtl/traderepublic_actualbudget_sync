@@ -9,7 +9,7 @@ services:
       - .env.example
       - .env
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     restart: unless-stopped
     volumes:
       # mount workspace for easier development (read-write) so pytr can persist cookies
@@ -17,7 +17,6 @@ services:
     environment:
       # Use the value from .env (APP_MODE). If not set, default to 'production'
       APP_MODE: ${APP_MODE:-production}
-
 
 
 

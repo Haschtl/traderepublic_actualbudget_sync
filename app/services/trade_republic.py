@@ -5,6 +5,7 @@ import json
 import logging
 from pathlib import Path
 import threading
+from datetime import date, datetime
 
 log = logging.getLogger(__name__)
 
@@ -311,10 +312,40 @@ def fetch_transactions(session_id: str | None = None) -> List[Dict]:
         )
 
 
-def fetch_all_transactions(session_id: str | None = None, max_pages: int = 1000) -> List[Dict]:
+def _parse_filter_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    return date.fromisoformat(value[:10])
+
+
+def _transaction_date(item: Dict) -> date | None:
+    raw_value = item.get("date") or item.get("timestamp") or (item.get("raw") or {}).get("timestamp")
+    if not raw_value:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw_value).replace("Z", "+00:00")).date()
+    except Exception:
+        try:
+            return date.fromisoformat(str(raw_value)[:10])
+        except Exception:
+            return None
+
+
+def fetch_all_transactions(
+    session_id: str | None = None,
+    max_pages: int = 1000,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> List[Dict]:
     """Récupère toute l'historique disponible via la pagination timelineTransactions."""
     if settings.app_mode == "mock":
-        return _SAMPLE
+        start = _parse_filter_date(from_date)
+        end = _parse_filter_date(to_date)
+        return [
+            item for item in _SAMPLE
+            if ((tx_date := _transaction_date(item)) is None)
+            or ((start is None or tx_date >= start) and (end is None or tx_date <= end))
+        ]
 
     _load_sessions()
 
@@ -345,6 +376,8 @@ def fetch_all_transactions(session_id: str | None = None, max_pages: int = 1000)
     items: list[Dict] = []
     seen_ids: set[str] = set()
     after = None
+    start = _parse_filter_date(from_date)
+    end = _parse_filter_date(to_date)
 
     try:
         for page in range(1, max_pages + 1):
@@ -357,7 +390,15 @@ def fetch_all_transactions(session_id: str | None = None, max_pages: int = 1000)
             page_items = response.get("items") or []
             log.info("fetch_all_transactions: page %s reçue avec %d transaction(s)", page, len(page_items))
 
+            page_dates = []
             for item in page_items:
+                tx_date = _transaction_date(item)
+                if tx_date:
+                    page_dates.append(tx_date)
+                if start and tx_date and tx_date < start:
+                    continue
+                if end and tx_date and tx_date > end:
+                    continue
                 item_id = item.get("id")
                 if item_id and item_id in seen_ids:
                     continue
@@ -367,6 +408,8 @@ def fetch_all_transactions(session_id: str | None = None, max_pages: int = 1000)
 
             next_after = (response.get("cursors") or {}).get("after")
             if not page_items or not next_after or next_after == after:
+                break
+            if start and page_dates and max(page_dates) < start:
                 break
             after = next_after
         else:
@@ -570,4 +613,3 @@ def resend_login(session_id: str) -> Dict:
         raise NotImplementedError("Échec du renvoi du code: %s" % e)
 
     raise NotImplementedError("resend_weblogin absent de pytr.")
-

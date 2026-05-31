@@ -97,8 +97,12 @@ async def run_scheduled_sync() -> dict:
     return await _run_sync(fetch_transactions)
 
 
-async def run_history_sync(session_id: str | None = None) -> dict:
-    return await _run_sync(lambda: fetch_all_transactions(session_id))
+async def run_history_sync(
+    session_id: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+) -> dict:
+    return await _run_sync(lambda: fetch_all_transactions(session_id, from_date=from_date, to_date=to_date))
 
 
 async def _run_sync(fetcher) -> dict:
