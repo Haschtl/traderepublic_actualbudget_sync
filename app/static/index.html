@@ -347,7 +347,7 @@
         <div class="panel span-8 stack">
           <div>
             <h2>2. Synchronisieren</h2>
-            <p class="muted">Der schnelle Sync lädt die aktuelle Timeline-Seite. Der History-Import läuft durch die Pagination und kann optional begrenzt werden.</p>
+            <p class="muted">Ohne Datumsbereich läuft ein schneller Sync. Sobald ein Zeitraum gesetzt ist, wird die paginierte Historie für diesen Bereich importiert.</p>
           </div>
           <div class="toolbar">
             <button id="btn-sync" class="primary">Jetzt synchronisieren</button>
@@ -363,9 +363,6 @@
               History bis
               <input id="history-to" type="date" />
             </label>
-          </div>
-          <div class="toolbar">
-            <button id="btn-sync-history" class="secondary">History importieren</button>
           </div>
         </div>
 
@@ -522,18 +519,6 @@
       }
 
       async function syncAll() {
-        setStatus('Sync läuft', 'Aktuelle Trade-Republic-Buchungen werden nach Actual übertragen...')
-        const data = await requestJson('/tr/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sessionPayload())
-        })
-        updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
-        setStatus('Sync abgeschlossen', summarizePush(data), 'success')
-        return data
-      }
-
-      async function syncHistory() {
         const fromDate = document.getElementById('history-from').value
         const toDate = document.getElementById('history-to').value
         if (fromDate && toDate && fromDate > toDate) {
@@ -541,22 +526,34 @@
           return
         }
 
+        if (!fromDate && !toDate) {
+          setStatus('Sync läuft', 'Aktuelle Trade-Republic-Buchungen werden nach Actual übertragen...')
+          const data = await requestJson('/tr/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sessionPayload())
+          })
+          updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
+          setStatus('Sync abgeschlossen', summarizePush(data), 'success')
+          return data
+        }
+
         const rangeText = [fromDate || 'Anfang', toDate || 'heute'].join(' bis ')
-        const confirmed = confirm(`History-Import fuer ${rangeText} starten? Das kann einige Minuten dauern.`)
+        const confirmed = confirm(`Sync fuer Historie ${rangeText} starten? Das kann einige Minuten dauern.`)
         if (!confirmed) return
 
         const payload = sessionPayload()
         if (fromDate) payload.from_date = fromDate
         if (toDate) payload.to_date = toDate
 
-        setStatus('History-Import läuft', `Importiere Zeitraum: ${rangeText}`)
+        setStatus('Historien-Sync läuft', `Importiere Zeitraum: ${rangeText}`)
         const data = await requestJson('/tr/sync-history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         })
         updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
-        setStatus('History-Import abgeschlossen', summarizePush(data), 'success')
+        setStatus('Historien-Sync abgeschlossen', summarizePush(data), 'success')
         return data
       }
 
@@ -623,10 +620,6 @@
 
       document.getElementById('btn-sync').addEventListener('click', async () => {
         try { await syncAll() } catch (error) { setStatus('Sync fehlgeschlagen', error.message, 'error') }
-      })
-
-      document.getElementById('btn-sync-history').addEventListener('click', async () => {
-        try { await syncHistory() } catch (error) { setStatus('History-Import fehlgeschlagen', error.message, 'error') }
       })
 
       setSessionId(currentSessionId)
