@@ -39,6 +39,60 @@ class FakeTimelineApi:
         self.subscriptions.pop(subscription_id, None)
 
 
+class FakePortfolioApi:
+    def __init__(self):
+        self.subscriptions = {}
+        self.responses = {}
+        self.counter = 0
+
+    async def compact_portfolio(self):
+        return self._subscribe(
+            {"type": "compactPortfolio"},
+            {
+                "positions": [
+                    {"instrumentId": "IE00B57X3V84", "netSize": "31.293027", "averageBuyIn": "79.922"},
+                    {"instrumentId": "XF000ETH0019", "netSize": "0.0076", "averageBuyIn": "3807.6711"},
+                ]
+            },
+        )
+
+    async def cash(self):
+        return self._subscribe(
+            {"type": "cash"},
+            [{"amount": "6541.72", "currencyId": "EUR"}],
+        )
+
+    async def instrument_details(self, isin):
+        return self._subscribe(
+            {"type": "instrument", "id": isin},
+            {"shortName": isin, "exchangeIds": ["LSX"]},
+        )
+
+    async def ticker(self, isin, exchange="LSX"):
+        prices = {
+            "IE00B57X3V84": "100.00",
+            "XF000ETH0019": "4000.00",
+        }
+        return self._subscribe(
+            {"type": "ticker", "id": f"{isin}.{exchange}"},
+            {"last": {"price": prices[isin]}},
+        )
+
+    def _subscribe(self, subscription, response):
+        self.counter += 1
+        subscription_id = f"sub-{self.counter}"
+        self.subscriptions[subscription_id] = subscription
+        self.responses[subscription_id] = response
+        return subscription_id
+
+    async def recv(self):
+        subscription_id = next(iter(self.subscriptions))
+        return subscription_id, self.subscriptions[subscription_id], self.responses[subscription_id]
+
+    async def unsubscribe(self, subscription_id):
+        self.subscriptions.pop(subscription_id, None)
+
+
 def test_fetch_all_transactions_mock_filters_date_range():
     original_mode = settings.app_mode
     settings.app_mode = "mock"
@@ -87,3 +141,27 @@ def test_extract_depot_value_sums_compact_portfolio_net_values():
 
     assert summary["depot_value"] == 200.0
     assert summary["positions"] == 2
+    assert summary["valued_positions"] == 2
+
+
+def test_extract_depot_value_falls_back_to_size_times_price():
+    summary = trade_republic._extract_depot_value({
+        "positions": [
+            {"instrumentId": "A", "netSize": "2.5", "price": "10.00"},
+            {"instrumentId": "B", "netSize": "3", "price": {"value": 1234, "fractionDigits": 2}},
+        ]
+    })
+
+    assert summary["depot_value"] == 62.02
+    assert summary["positions"] == 2
+    assert summary["valued_positions"] == 2
+
+
+def test_fetch_depot_value_summary_enriches_prices_from_tickers():
+    summary = asyncio.run(trade_republic._fetch_depot_value_summary(FakePortfolioApi()))
+
+    assert summary["depot_value"] == 3159.70
+    assert summary["cash_value"] == 6541.72
+    assert summary["total_value"] == 9701.42
+    assert summary["positions"] == 2
+    assert summary["valued_positions"] == 2

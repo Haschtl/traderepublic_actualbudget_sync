@@ -5,12 +5,18 @@ import asyncio
 import uuid
 import json
 import logging
+import re
 from pathlib import Path
 import threading
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 log = logging.getLogger(__name__)
+
+BOND_NAME_PATTERN = re.compile(
+    r"(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|January|February|March|April|May|June|July|August|September|October|November|December|Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\.?\s+20\d{2}",
+    re.IGNORECASE,
+)
 
 
 # Simple in-memory session store; persisted next to TR_COOKIES_FILE for survivability.
@@ -299,14 +305,41 @@ def _decimal_from_money(value: Any) -> Decimal:
     if isinstance(value, Decimal):
         return value
     if isinstance(value, dict):
+        if "value" in value and "fractionDigits" in value:
+            try:
+                return Decimal(str(value["value"])) / (Decimal(10) ** int(value["fractionDigits"]))
+            except Exception:
+                return Decimal("0")
         for key in ("amount", "value", "netValue"):
             if key in value:
                 return _decimal_from_money(value[key])
         return Decimal("0")
+    if isinstance(value, str):
+        normalized = value.strip().replace("€", "").replace(" ", "")
+        if "," in normalized:
+            normalized = normalized.replace(".", "").replace(",", ".")
+        try:
+            return Decimal(normalized)
+        except Exception:
+            return Decimal("0")
     try:
         return Decimal(str(value))
     except Exception:
         return Decimal("0")
+
+
+def _extract_position_value(position: Dict[str, Any]) -> Decimal:
+    for key in ("netValue", "currentValue", "marketValue", "value"):
+        amount = _decimal_from_money(position.get(key))
+        if amount:
+            return amount
+
+    size = _decimal_from_money(position.get("netSize") or position.get("size") or position.get("quantity"))
+    price = _decimal_from_money(position.get("price") or position.get("lastPrice"))
+    if size and price:
+        return size * price
+
+    return Decimal("0")
 
 
 def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
@@ -314,16 +347,185 @@ def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
     if isinstance(compact_portfolio, dict):
         positions = compact_portfolio.get("positions") or []
     total = Decimal("0")
+    valued_positions = 0
     for position in positions:
         if not isinstance(position, dict):
             continue
-        total += _decimal_from_money(position.get("netValue"))
+        position_value = _extract_position_value(position)
+        if position_value:
+            valued_positions += 1
+        total += position_value
     return {
         "currency": "EUR",
         "depot_value": float(total),
         "positions": len(positions),
+        "valued_positions": valued_positions,
         "raw": compact_portfolio,
     }
+
+
+async def _fetch_compact_portfolio(api) -> Dict:
+    subscription_id = await api.compact_portfolio()
+    try:
+        return await _receive_subscription_response(api, subscription_id)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
+async def _fetch_cash(api) -> Any:
+    subscription_id = await api.cash()
+    try:
+        return await _receive_subscription_response(api, subscription_id)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
+async def _fetch_instrument_details(api, isin: str) -> Dict:
+    subscription_id = await api.instrument_details(isin)
+    try:
+        return await _receive_subscription_response(api, subscription_id)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
+async def _fetch_ticker(api, isin: str, exchange: str = "LSX") -> Dict:
+    subscription_id = await api.ticker(isin, exchange=exchange)
+    try:
+        return await _receive_subscription_response(api, subscription_id, timeout=10)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
+def _ticker_price(ticker_response: Dict | None) -> Decimal:
+    if not isinstance(ticker_response, dict):
+        return Decimal("0")
+    for path in (
+        ("last", "price"),
+        ("bid", "price"),
+        ("ask", "price"),
+        ("pre", "price"),
+        ("open", "price"),
+    ):
+        value: Any = ticker_response
+        for key in path:
+            if not isinstance(value, dict):
+                value = None
+                break
+            value = value.get(key)
+        amount = _decimal_from_money(value)
+        if amount:
+            return amount
+    return Decimal("0")
+
+
+def _extract_cash_value(cash_response: Any) -> tuple[Decimal, str]:
+    if isinstance(cash_response, list) and cash_response:
+        first = cash_response[0]
+        if isinstance(first, dict):
+            return _decimal_from_money(first.get("amount")), first.get("currencyId") or first.get("currency") or "EUR"
+    if isinstance(cash_response, dict):
+        return _decimal_from_money(cash_response.get("amount") or cash_response.get("cash")), (
+            cash_response.get("currencyId") or cash_response.get("currency") or "EUR"
+        )
+    return Decimal("0"), "EUR"
+
+
+async def _fetch_depot_value_summary(api) -> Dict:
+    compact = await _fetch_compact_portfolio(api)
+    cash_response = await _fetch_cash(api)
+    cash_value, currency = _extract_cash_value(cash_response)
+    positions = compact.get("positions") if isinstance(compact, dict) else []
+    if not isinstance(positions, list):
+        positions = []
+
+    positions = [
+        position for position in positions
+        if isinstance(position, dict) and position.get("instrumentId")
+    ]
+
+    detail_subscriptions = {}
+    for position in positions:
+        isin = position.get("instrumentId")
+        try:
+            subscription_id = await api.instrument_details(isin)
+            detail_subscriptions[subscription_id] = position
+        except Exception as exc:
+            position["instrumentDetails_error"] = str(exc)
+
+    while detail_subscriptions:
+        try:
+            subscription_id, subscription, response = await api.recv()
+        except Exception as exc:
+            for position in detail_subscriptions.values():
+                position["instrumentDetails_error"] = str(exc)
+            break
+        if subscription.get("type") != "instrument":
+            continue
+        await _unsubscribe_safely(api, subscription_id)
+        position = detail_subscriptions.pop(subscription_id, None)
+        if position is None:
+            continue
+        position["instrumentDetails"] = response
+        if isinstance(response, dict):
+            position["name"] = response.get("shortName") or position.get("name")
+            position["exchangeIds"] = response.get("exchangeIds") or position.get("exchangeIds") or []
+
+    ticker_subscriptions = {}
+    for position in positions:
+        exchange_ids = position.get("exchangeIds") or []
+        if not isinstance(exchange_ids, list) or not exchange_ids:
+            continue
+        try:
+            subscription_id = await api.ticker(position["instrumentId"], exchange=exchange_ids[0])
+            ticker_subscriptions[subscription_id] = position
+        except Exception as exc:
+            position["ticker_error"] = str(exc)
+
+    while ticker_subscriptions:
+        try:
+            subscription_id, subscription, response = await asyncio.wait_for(api.recv(), 5)
+        except asyncio.TimeoutError:
+            for position in ticker_subscriptions.values():
+                position["ticker_error"] = "Timed out waiting for ticker"
+            break
+        if subscription.get("type") != "ticker":
+            continue
+        await _unsubscribe_safely(api, subscription_id)
+        position = ticker_subscriptions.pop(subscription_id, None)
+        if position is None:
+            continue
+        position["ticker"] = response
+        price = _ticker_price(response)
+        if price:
+            if BOND_NAME_PATTERN.search(str(position.get("name") or "")):
+                price = price / Decimal("100")
+            position["price"] = str(price)
+            size = _decimal_from_money(position.get("netSize") or position.get("virtualSize"))
+            if "netSize" not in position:
+                position["netSize"] = "0"
+                position["averageBuyIn"] = str(price)
+            position["netValue"] = str((size * price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+    summary = _extract_depot_value({"positions": positions})
+    buy_cost = Decimal("0")
+    for position in positions:
+        size = _decimal_from_money(position.get("netSize") or position.get("virtualSize"))
+        avg = _decimal_from_money(position.get("averageBuyIn"))
+        if size and avg:
+            buy_cost += (size * avg).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    depot_value = Decimal(str(summary["depot_value"]))
+    summary.update({
+        "currency": currency,
+        "cash_value": float(cash_value),
+        "buy_cost": float(buy_cost),
+        "total_buy_cost": float(cash_value + buy_cost),
+        "total_value": float(cash_value + depot_value),
+        "raw": {
+            "positions": positions,
+            "cash": cash_response,
+        },
+    })
+    return summary
 
 
 def fetch_depot_value(session_id: str | None = None) -> Dict:
@@ -369,8 +571,7 @@ def fetch_depot_value(session_id: str | None = None) -> Dict:
 
     try:
         _reset_api_async_state(api)
-        response = api.run_blocking(api.compact_portfolio(), timeout=30)
-        summary = _extract_depot_value(response)
+        summary = asyncio.run(_fetch_depot_value_summary(api))
         summary["status"] = "ok"
         summary["session_id"] = resolved_sid
         return summary

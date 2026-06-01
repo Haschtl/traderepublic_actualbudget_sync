@@ -211,7 +211,7 @@ Trade Republic shows the depot as current market value. Actual Budget does not a
 
 To make Actual's depot balance match the current Trade Republic value, use the separate `Depotwert angleichen` UI action. It does not run during the normal import push.
 
-After a successful Trade Republic login, the UI calls `/tr/depot-value` and fills the target value field from `compactPortfolio` by summing all position `netValue` values. If loading fails, you can still enter the value manually.
+After a successful Trade Republic login, the UI calls `/tr/depot-value` and fills the target value field. The endpoint follows the same rough flow as `pytr portfolio`: load `compactPortfolio` and `cash`, enrich positions with `instrument_details`, fetch tickers, then calculate `netSize * last price`. The response also includes Cash and Total values for comparison. If loading fails, you can still enter the depot value manually.
 
 The endpoint calculates:
 

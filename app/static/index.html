@@ -948,8 +948,16 @@
           document.getElementById('depot-target-value').value = data.depot_value.toFixed(2)
         }
         if (!silent) {
-          const positions = typeof data.positions === 'number' ? ` aus ${data.positions} Position(en)` : ''
-          setStatus('Depotwert geladen', `${(data.depot_value ?? 0).toFixed(2)} ${data.currency || 'EUR'}${positions}.`, 'success')
+          const positions = typeof data.positions === 'number'
+            ? ` aus ${data.valued_positions ?? data.positions}/${data.positions} bewerteten Position(en)`
+            : ''
+          const cash = typeof data.cash_value === 'number'
+            ? ` Cash: ${data.cash_value.toFixed(2)} ${data.currency || 'EUR'}.`
+            : ''
+          const total = typeof data.total_value === 'number'
+            ? ` Total: ${data.total_value.toFixed(2)} ${data.currency || 'EUR'}.`
+            : ''
+          setStatus('Depotwert geladen', `Depot: ${(data.depot_value ?? 0).toFixed(2)} ${data.currency || 'EUR'}${positions}.${cash}${total}`, 'success')
         }
         return data
       }
