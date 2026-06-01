@@ -9,6 +9,7 @@ from app.services.trade_republic import (
     get_last_history_meta,
     start_login as tr_start_login,
     complete_login as tr_complete_login,
+    fetch_depot_value as tr_fetch_depot_value,
     get_login_status as tr_get_status,
     resend_login as tr_resend_login,
     TRRateLimitError,
@@ -217,6 +218,17 @@ async def adjust_actual_depot(payload: dict):
 @router.get("/tr/status")
 async def tr_status():
     return tr_get_status()
+
+
+@router.post("/tr/depot-value")
+async def tr_depot_value(payload: Optional[dict] = None):
+    session_id = (payload or {}).get("session_id") or None
+    try:
+        return await asyncio.to_thread(tr_fetch_depot_value, session_id)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/tr/sync")

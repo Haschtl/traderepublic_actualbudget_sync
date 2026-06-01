@@ -424,10 +424,6 @@
             <button id="btn-csv-preview" class="secondary" type="button">CSV-Import</button>
             <button id="btn-sync" class="primary" disabled>Zu Actual pushen</button>
           </div>
-          <div class="toolbar">
-            <button id="btn-reset-preview" class="secondary" type="button">Reset prüfen</button>
-            <button id="btn-reset-run" class="danger" type="button">TR-Import zurücksetzen</button>
-          </div>
           <input id="csv-file" type="file" accept=".csv,text/csv" hidden />
           <div class="field-row">
             <label>
@@ -446,7 +442,10 @@
             </label>
             <label>
               Depot-Saldo
-              <button id="btn-depot-adjustment" class="secondary" type="button">Depotwert angleichen</button>
+              <span class="toolbar">
+                <button id="btn-load-depot-value" class="secondary" type="button">TR-Wert laden</button>
+                <button id="btn-depot-adjustment" class="secondary" type="button">Depotwert angleichen</button>
+              </span>
             </label>
           </div>
         </div>
@@ -515,6 +514,14 @@
             <summary>Import-Report</summary>
             <pre id="import-report">[]</pre>
           </details>
+          <div class="panel" style="margin-top: 10px;">
+            <h2>Wartung</h2>
+            <p class="muted" style="margin-bottom: 12px;">Reset nur verwenden, wenn du importierte Trade-Republic-Buchungen aus Actual entfernen und danach sauber neu importieren willst.</p>
+            <div class="toolbar">
+              <button id="btn-reset-preview" class="secondary" type="button">Reset prüfen</button>
+              <button id="btn-reset-run" class="danger" type="button">TR-Import zurücksetzen</button>
+            </div>
+          </div>
         </div>
       </section>
     </main>
@@ -926,6 +933,27 @@
         return data
       }
 
+      async function loadDepotValueFromTradeRepublic({ silent = false } = {}) {
+        if (!currentSessionId) {
+          if (!silent) throw new Error('Bitte zuerst Trade Republic verbinden.')
+          return null
+        }
+        if (!silent) setStatus('Depotwert wird geladen', 'Aktueller Trade-Republic-Depotwert wird aus der aktiven Session gelesen...')
+        const data = await requestJson('/tr/depot-value', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sessionPayload())
+        })
+        if (typeof data.depot_value === 'number') {
+          document.getElementById('depot-target-value').value = data.depot_value.toFixed(2)
+        }
+        if (!silent) {
+          const positions = typeof data.positions === 'number' ? ` aus ${data.positions} Position(en)` : ''
+          setStatus('Depotwert geladen', `${(data.depot_value ?? 0).toFixed(2)} ${data.currency || 'EUR'}${positions}.`, 'success')
+        }
+        return data
+      }
+
       function summarizePush(data) {
         const pushed = data.pushed || {}
         const fetchMeta = data.fetch_meta
@@ -974,6 +1002,11 @@
           if (data.session_id) setSessionId(data.session_id)
           document.getElementById('otp').value = ''
           setStatus('Verbunden', data.message || 'Trade Republic Session ist aktiv.', 'success')
+          try {
+            await loadDepotValueFromTradeRepublic({ silent: false })
+          } catch (error) {
+            setStatus('Verbunden, Depotwert nicht geladen', error.message, 'error')
+          }
         } catch (error) {
           setStatus('Code konnte nicht bestaetigt werden', error.message, 'error')
         }
@@ -1001,6 +1034,10 @@
 
       document.getElementById('btn-depot-adjustment').addEventListener('click', async () => {
         try { await adjustDepotBalance() } catch (error) { setStatus('Depot-Abgleich fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-load-depot-value').addEventListener('click', async () => {
+        try { await loadDepotValueFromTradeRepublic() } catch (error) { setStatus('Depotwert konnte nicht geladen werden', error.message, 'error') }
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {

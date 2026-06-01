@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Any
 from app.core.config import settings
 from app.services.state import load_state
 import asyncio
@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 import threading
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 
 log = logging.getLogger(__name__)
 
@@ -290,6 +291,94 @@ def _reset_api_async_state(api) -> None:
     api._subscription_id_counter = 1
     api._previous_responses = {}
     api.subscriptions = {}
+
+
+def _decimal_from_money(value: Any) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    if isinstance(value, dict):
+        for key in ("amount", "value", "netValue"):
+            if key in value:
+                return _decimal_from_money(value[key])
+        return Decimal("0")
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal("0")
+
+
+def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
+    positions = []
+    if isinstance(compact_portfolio, dict):
+        positions = compact_portfolio.get("positions") or []
+    total = Decimal("0")
+    for position in positions:
+        if not isinstance(position, dict):
+            continue
+        total += _decimal_from_money(position.get("netValue"))
+    return {
+        "currency": "EUR",
+        "depot_value": float(total),
+        "positions": len(positions),
+        "raw": compact_portfolio,
+    }
+
+
+def fetch_depot_value(session_id: str | None = None) -> Dict:
+    """Fetch current Trade Republic depot market value from compactPortfolio."""
+    if settings.app_mode == "mock":
+        return {
+            "status": "mocked",
+            "currency": "EUR",
+            "depot_value": 3000.0,
+            "positions": 1,
+        }
+
+    _load_sessions()
+
+    resolved_sid = session_id
+    cookies_file = None
+
+    if not resolved_sid:
+        resolved_sid, cookies_file = _find_connected_session()
+        if not resolved_sid:
+            raise NotImplementedError(
+                "Aucune session Trade Republic active. "
+                "Connectez-vous via /tr/connect puis /tr/complete avant de récupérer le depot."
+            )
+        log.info("fetch_depot_value: utilisation de la session connectée %s", resolved_sid)
+
+    session = SESSIONS.get(resolved_sid, {})
+    cookies_file = cookies_file or session.get("cookies_file") or _cookies_file_for_session(resolved_sid)
+
+    api = _get_api_client(resolved_sid)
+    if api is None:
+        log.warning("fetch_depot_value: instance API non trouvée en mémoire — reconstruction depuis cookies")
+        api = _build_api_client(cookies_file)
+        _store_api_client(resolved_sid, api)
+
+    if not api.resume_websession():
+        _mark_session_expired(resolved_sid)
+        raise NotImplementedError(
+            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
+            "Bitte im UI neu verbinden."
+        )
+    _mark_session_connected(resolved_sid)
+
+    try:
+        _reset_api_async_state(api)
+        response = api.run_blocking(api.compact_portfolio(), timeout=30)
+        summary = _extract_depot_value(response)
+        summary["status"] = "ok"
+        summary["session_id"] = resolved_sid
+        return summary
+    except Exception as e:
+        raise NotImplementedError(
+            "Échec lors de la récupération de la valeur du depot Trade Republic. "
+            "Vérifiez la session et la connexion. Erreur: %s" % e
+        )
 
 
 def fetch_transactions(session_id: str | None = None) -> List[Dict]:

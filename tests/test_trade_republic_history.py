@@ -75,3 +75,15 @@ def test_paginated_history_follows_cursor_and_filters_range():
     assert api.after_values == [None, "cursor-2"]
     assert meta["pages_read"] == 2
     assert meta["items_returned"] == 1
+
+
+def test_extract_depot_value_sums_compact_portfolio_net_values():
+    summary = trade_republic._extract_depot_value({
+        "positions": [
+            {"instrumentId": "A", "netValue": "123.45"},
+            {"instrumentId": "B", "netValue": 76.55},
+        ]
+    })
+
+    assert summary["depot_value"] == 200.0
+    assert summary["positions"] == 2

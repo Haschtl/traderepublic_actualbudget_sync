@@ -24,6 +24,7 @@ It supports both the Trade Republic API via [`pytr`](https://github.com/pytr-org
 - Matched transfers are highlighted in the UI preview; hover shows the matched Actual transaction.
 - Reset helper for deleting imported TR rows and unlinking matched external transfers.
 - Explicit depot valuation adjustment to align the Actual depot balance with the current Trade Republic market value.
+- Automatic Trade Republic depot value lookup after login, plus a manual `TR-Wert laden` button.
 - Duplicate detection through Actual `financial_id`.
 - Full Trade Republic details are written into Actual notes.
 - Pending/cleared handling.
@@ -94,9 +95,10 @@ Open `http://127.0.0.1:8000`.
    - Existing Gegenkonto transactions are not deleted; their transfer link is removed so a fresh import can match them again.
 
 6. Optional depot valuation adjustment
-   - Enter the current Trade Republic depot value.
+   - After login, the UI tries to load the current Trade Republic depot value automatically.
+   - You can also click `TR-Wert laden`.
    - Click `Depotwert angleichen`.
-   - The app creates one explicit `TR Market valuation adjustment` transaction in the depot account for the delta.
+   - The app creates one explicit `TR Depotwert-Anpassung seit letzter Bewertung` transaction in the depot account for the delta.
 
 ## Environment Variables
 
@@ -209,6 +211,8 @@ Trade Republic shows the depot as current market value. Actual Budget does not a
 
 To make Actual's depot balance match the current Trade Republic value, use the separate `Depotwert angleichen` UI action. It does not run during the normal import push.
 
+After a successful Trade Republic login, the UI calls `/tr/depot-value` and fills the target value field from `compactPortfolio` by summing all position `netValue` values. If loading fails, you can still enter the value manually.
+
 The endpoint calculates:
 
 ```text
@@ -280,6 +284,7 @@ curl -X POST http://127.0.0.1:8000/tr/sync-now
 | `POST` | `/tr/resend` | Resend login code |
 | `POST` | `/tr/fetch` | Fetch current Trade Republic API transactions |
 | `POST` | `/tr/fetch-history` | Fetch paginated Trade Republic history without pushing |
+| `POST` | `/tr/depot-value` | Fetch current Trade Republic depot market value |
 | `POST` | `/tr/map` | Map raw TR transactions to Actual transaction shape |
 | `POST` | `/tr/preview-import` | Preview mapped transactions against Actual |
 | `POST` | `/tr/push-mapped` | Push already mapped transactions to Actual |
