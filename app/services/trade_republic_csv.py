@@ -4,6 +4,22 @@ from decimal import Decimal, InvalidOperation
 from typing import Dict, List
 
 
+CSV_EVENT_TYPE_MAP = {
+    "BANK_TRANSACTION_INCOMING": "BANK_TRANSACTION_INCOMING",
+    "CUSTOMER_INBOUND": "BANK_TRANSACTION_INCOMING",
+    "CUSTOMER_INPAYMENT": "BANK_TRANSACTION_INCOMING",
+    "TRANSFER_INBOUND": "BANK_TRANSACTION_INCOMING",
+    "BANK_TRANSACTION_OUTGOING": "BANK_TRANSACTION_OUTGOING",
+    "CUSTOMER_OUTBOUND": "BANK_TRANSACTION_OUTGOING",
+    "TRANSFER_OUTBOUND": "BANK_TRANSACTION_OUTGOING",
+    "TRANSFER_INSTANT_OUTBOUND": "BANK_TRANSACTION_OUTGOING",
+    "TRADING_TRADE_EXECUTED": "TRADING_TRADE_EXECUTED",
+    "INTEREST_PAYOUT": "INTEREST_PAYOUT",
+    "CARD_TRANSACTION": "CARD_TRANSACTION",
+    "TAX_OPTIMIZATION": "TAX_OPTIMIZATION",
+}
+
+
 def _parse_decimal(value: str | None) -> Decimal | None:
     if value is None:
         return None
@@ -25,10 +41,8 @@ def _classify_csv_event(row: Dict[str, str]) -> str:
     asset_class = (row.get("asset_class") or "").strip()
     shares = (row.get("shares") or "").strip()
 
-    if tx_type in {"CUSTOMER_INBOUND", "BANK_TRANSACTION_INCOMING"}:
-        return "BANK_TRANSACTION_INCOMING"
-    if tx_type in {"CUSTOMER_OUTBOUND", "BANK_TRANSACTION_OUTGOING"}:
-        return "BANK_TRANSACTION_OUTGOING"
+    if tx_type in CSV_EVENT_TYPE_MAP:
+        return CSV_EVENT_TYPE_MAP[tx_type]
     if "INTEREST" in tx_type:
         return "INTEREST_PAYOUT"
     if "CARD" in tx_type:

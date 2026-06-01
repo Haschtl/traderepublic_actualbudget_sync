@@ -140,7 +140,7 @@
       }
 
       button:disabled {
-        cursor: wait;
+        cursor: not-allowed;
         opacity: 0.58;
       }
 
@@ -403,8 +403,9 @@
           <div class="toolbar">
             <button id="btn-map" class="secondary">TR-Import</button>
             <button id="btn-csv-preview" class="secondary" type="button">CSV-Import</button>
-            <button id="btn-sync" class="primary">Zu Actual pushen</button>
+            <button id="btn-sync" class="primary" disabled>Zu Actual pushen</button>
           </div>
+          <input id="csv-file" type="file" accept=".csv,text/csv" hidden />
           <div class="field-row">
             <label>
               History von
@@ -413,16 +414,6 @@
             <label>
               History bis
               <input id="history-to" type="date" />
-            </label>
-          </div>
-          <div class="field-row">
-            <label>
-              Trade Republic CSV
-              <input id="csv-file" type="file" accept=".csv,text/csv" />
-            </label>
-            <label>
-              CSV-Aktion
-              <span class="muted">Datei auswählen und oben CSV-Import & Preview starten.</span>
             </label>
           </div>
         </div>
@@ -503,7 +494,11 @@
       const buttons = Array.from(document.querySelectorAll('button'))
 
       function setBusy(isBusy) {
-        buttons.forEach((button) => { button.disabled = isBusy })
+        buttons.forEach((button) => { button.disabled = isBusy || (button.id === 'btn-sync' && !lastMappedTransactions.length) })
+      }
+
+      function updatePushButton() {
+        document.getElementById('btn-sync').disabled = !lastMappedTransactions.length
       }
 
       function setSessionId(sid) {
@@ -666,6 +661,8 @@
           body: JSON.stringify(payload)
         })
         lastRawTransactions = data.transactions || []
+        lastMappedTransactions = []
+        updatePushButton()
         writeJson('raw', lastRawTransactions)
         updateMetrics({ fetched: data.count || lastRawTransactions.length })
         await previewMap(lastRawTransactions)
@@ -684,6 +681,7 @@
           body: JSON.stringify(transactions)
         })
         lastMappedTransactions = data || []
+        updatePushButton()
         writeJson('mapped', lastMappedTransactions)
         updateMetrics({ mapped: lastMappedTransactions.length })
         const preview = await previewImport(lastMappedTransactions)
@@ -713,14 +711,13 @@
         }
       }
 
-      async function readCsvFile() {
-        const file = document.getElementById('csv-file').files[0]
+      async function readCsvFile(file) {
         if (!file) throw new Error('Bitte zuerst eine Trade-Republic-CSV auswählen.')
         return await file.text()
       }
 
-      async function previewCsv() {
-        const csv = await readCsvFile()
+      async function previewCsv(file) {
+        const csv = await readCsvFile(file)
         setStatus('CSV wird gelesen', 'Trade-Republic-Export wird geparst und gemappt...')
         const data = await requestJson('/tr/csv/preview', {
           method: 'POST',
@@ -729,6 +726,7 @@
         })
         lastRawTransactions = data.transactions || []
         lastMappedTransactions = data.mapped || []
+        updatePushButton()
         writeJson('raw', lastRawTransactions)
         writeJson('mapped', lastMappedTransactions)
         writeJson('import-report', data.preview?.report || [{ action: 'preview_unavailable', error: data.preview_error || 'Actual-Preview nicht verfügbar' }])
@@ -832,10 +830,18 @@
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {
-        try { await previewCsv() } catch (error) { setStatus('CSV-Preview fehlgeschlagen', error.message, 'error') }
+        document.getElementById('csv-file').click()
+      })
+
+      document.getElementById('csv-file').addEventListener('change', async (event) => {
+        const file = event.target.files[0]
+        event.target.value = ''
+        if (!file) return
+        try { await previewCsv(file) } catch (error) { setStatus('CSV-Preview fehlgeschlagen', error.message, 'error') }
       })
 
       setSessionId(currentSessionId)
+      updatePushButton()
       restoreSessionFromServer()
     </script>
   </body>

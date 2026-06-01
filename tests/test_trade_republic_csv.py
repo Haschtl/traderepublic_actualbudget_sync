@@ -34,3 +34,27 @@ def test_parse_trade_republic_csv_maps_buy_to_cash_depot_transfer():
     assert items[0]["eventType"] == "TRADING_TRADE_EXECUTED"
     assert mapped[0]["amount"] == -2000
     assert mapped[0]["transfer_kind"] == "depot"
+
+
+def test_parse_trade_republic_csv_normalizes_export_event_types():
+    rows = [
+        ("CUSTOMER_INPAYMENT", "BANK_TRANSACTION_INCOMING", 1000, "external"),
+        ("TRANSFER_INBOUND", "BANK_TRANSACTION_INCOMING", 1000, "external"),
+        ("TRANSFER_OUTBOUND", "BANK_TRANSACTION_OUTGOING", -1000, "external"),
+        ("TRANSFER_INSTANT_OUTBOUND", "BANK_TRANSACTION_OUTGOING", -1000, "external"),
+        ("INTEREST_PAYOUT", "INTEREST_PAYOUT", 1000, None),
+        ("CARD_TRANSACTION", "CARD_TRANSACTION", -1000, None),
+        ("TAX_OPTIMIZATION", "TAX_OPTIMIZATION", 1000, None),
+    ]
+
+    for csv_type, expected_event_type, expected_amount, expected_transfer_kind in rows:
+        csv_text = f'''datetime,date,account_type,category,type,asset_class,name,symbol,shares,price,amount,fee,tax,currency,original_amount,original_currency,fx_rate,description,transaction_id,counterparty_name,counterparty_iban,payment_reference,mcc_code
+2024-01-02T10:00:00Z,2024-01-02,DEFAULT,CASH,{csv_type},,,,"","",10.00,,,EUR,,,,,{csv_type}-1,,,,'''
+
+        items = parse_trade_republic_csv(csv_text)
+        mapped = map_pytr_to_actual(items)
+
+        assert items[0]["eventType"] == expected_event_type
+        assert mapped[0]["event_type"] == expected_event_type
+        assert mapped[0]["amount"] == expected_amount
+        assert mapped[0]["transfer_kind"] == expected_transfer_kind
