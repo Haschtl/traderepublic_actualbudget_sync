@@ -394,8 +394,8 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 "date": tx.get("date"),
                 "payee": tx.get("payee"),
                 "event_type": tx.get("event_type"),
-                "account": cash_account_name if (tx.get("amount") or 0) < 0 else depot_account_name,
-                "transfer_account": depot_account_name if (tx.get("amount") or 0) < 0 else cash_account_name,
+                "account": cash_account_name,
+                "transfer_account": depot_account_name,
                 "amount": tx.get("amount"),
                 "transfer_kind": tx.get("transfer_kind"),
                 "planned_action": planned_action,
@@ -620,13 +620,11 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             })
                             continue
 
-                        trade_account = cash_account if amount_eur < 0 else depot_account
-                        counterpart_account = depot_account if amount_eur < 0 else cash_account
                         result_tx, counterpart_tx, linked_existing = _create_or_link_transfer(
                             session,
                             date=date,
-                            account=trade_account,
-                            transfer_account=counterpart_account,
+                            account=cash_account,
+                            transfer_account=depot_account,
                             amount_eur=amount_eur,
                             notes=notes,
                             imported_id=imported_id,
@@ -641,8 +639,8 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             "date": date_str,
                             "payee": payee,
                             "event_type": tx.get("event_type"),
-                            "account": trade_account.name,
-                            "transfer_account": counterpart_account.name,
+                            "account": cash_account.name,
+                            "transfer_account": depot_account.name,
                             "transfer_kind": transfer_kind,
                             "amount": amount_eur,
                             "action": "created_transfer",

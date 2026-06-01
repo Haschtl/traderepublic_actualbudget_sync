@@ -172,6 +172,26 @@ def _load_cookies_into_client(api) -> bool:
     return False
 
 
+def _mark_session_expired(session_id: str | None, message: str = "websession expired") -> None:
+    if not session_id:
+        return
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
+        if session and session.get("status") == "connected":
+            session.update({"status": "expired", "message": message})
+    _save_sessions()
+
+
+def _mark_session_connected(session_id: str | None, message: str = "websession valid") -> None:
+    if not session_id:
+        return
+    with SESSIONS_LOCK:
+        session = SESSIONS.get(session_id)
+        if session:
+            session.update({"status": "connected", "message": message})
+    _save_sessions()
+
+
 class TRRateLimitError(Exception):
     """Levée quand Trade Republic retourne un 429 Too Many Requests."""
     def __init__(self, message: str, retry_after: int | None = None):
@@ -311,7 +331,12 @@ def fetch_transactions(session_id: str | None = None) -> List[Dict]:
 
     # Auth complète → resume_websession() est sûr ici (settings() retourne 200)
     if not api.resume_websession():
-        log.warning("fetch_transactions: resume_websession a échoué; les cookies sont peut-être expirés")
+        _mark_session_expired(resolved_sid)
+        raise NotImplementedError(
+            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
+            "Bitte im UI neu verbinden."
+        )
+    _mark_session_connected(resolved_sid)
 
     # Réinitialiser l'état asyncio avant chaque appel à run_blocking / asyncio.run().
     # Sans ça, le 2e appel lève "Task got Future attached to a different loop" parce que
@@ -571,7 +596,12 @@ def fetch_all_transactions(
         _store_api_client(resolved_sid, api)
 
     if not api.resume_websession():
-        log.warning("fetch_all_transactions: resume_websession a échoué; les cookies sont peut-être expirés")
+        _mark_session_expired(resolved_sid)
+        raise NotImplementedError(
+            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
+            "Bitte im UI neu verbinden."
+        )
+    _mark_session_connected(resolved_sid)
 
     try:
         _reset_api_async_state(api)
@@ -716,6 +746,10 @@ def complete_login(code: str, session_id: str | None = None) -> Dict:
         if hasattr(api, 'complete_weblogin'):
             # complete_weblogin is synchronous in pytr and the route already runs in a worker thread.
             api.complete_weblogin(code)
+            try:
+                api.save_websession()
+            except Exception as exc:
+                log.warning("save_websession après complete_weblogin a échoué: %s", exc)
             log.info("complete_weblogin réussi pour session %s", session_id)
             with SESSIONS_LOCK:
                 SESSIONS[session_id].update({"status": "connected", "message": "via complete_weblogin"})
@@ -749,9 +783,15 @@ def get_login_status() -> Dict:
                 if api is None:
                     api = _build_api_client(session.get("cookies_file") or _cookies_file_for_session(sid))
                     _store_api_client(sid, api)
-                validity = "valid" if api.resume_websession() else "expired"
+                if api.resume_websession():
+                    validity = "valid"
+                    _mark_session_connected(sid)
+                else:
+                    validity = "expired"
+                    _mark_session_expired(sid)
             except Exception:
                 validity = "expired"
+                _mark_session_expired(sid)
     return {
         "current_session_id": sid,
         "session_validity": validity,
