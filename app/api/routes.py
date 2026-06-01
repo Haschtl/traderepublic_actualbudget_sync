@@ -5,6 +5,8 @@ from app.models.schemas import PytrTransaction, ActualTransaction
 from app.mapping.mapper import map_pytr_to_actual
 from app.services.trade_republic import fetch_transactions as tr_fetch
 from app.services.trade_republic import (
+    fetch_all_transactions as tr_fetch_history,
+    get_last_history_meta,
     start_login as tr_start_login,
     complete_login as tr_complete_login,
     get_login_status as tr_get_status,
@@ -19,33 +21,30 @@ from app.services.actual import preview_import as actual_preview_import
 from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.services.state import mark_sync_failure, mark_sync_success
 from app.services.trade_republic_csv import parse_trade_republic_csv
-from app.core.config import settings
 
 router = APIRouter()
+
+
+def _serialize_models(items):
+    serialized = []
+    for item in items:
+        if hasattr(item, "model_dump"):
+            serialized.append(item.model_dump())
+        else:
+            serialized.append(item.dict())
+    return serialized
 
 
 @router.post("/tr/map", response_model=List[ActualTransaction])
 async def map_preview(transactions: List[PytrTransaction]):
     """Retourne la preview des transactions mappées (sans les envoyer)."""
-    # Use model_dump for pydantic v2 when available, fallback to dict()
-    serialized = []
-    for t in transactions:
-        if hasattr(t, "model_dump"):
-            serialized.append(t.model_dump())
-        else:
-            serialized.append(t.dict())
-    mapped = map_pytr_to_actual(serialized)
+    mapped = map_pytr_to_actual(_serialize_models(transactions))
     return mapped
 
 
 @router.post("/tr/preview-import")
 async def preview_import(transactions: List[ActualTransaction]):
-    serialized = []
-    for t in transactions:
-        if hasattr(t, "model_dump"):
-            serialized.append(t.model_dump())
-        else:
-            serialized.append(t.dict())
+    serialized = _serialize_models(transactions)
     try:
         return await asyncio.to_thread(actual_preview_import, serialized)
     except NotImplementedError as e:
@@ -62,6 +61,41 @@ async def fetch_from_tr(payload: Optional[dict] = None):
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     return {"count": len(txs), "transactions": txs}
+
+
+@router.post("/tr/fetch-history")
+async def fetch_history_from_tr(payload: Optional[dict] = None):
+    payload = payload or {}
+    session_id = payload.get("session_id") or None
+    from_date = payload.get("from_date") or None
+    to_date = payload.get("to_date") or None
+    try:
+        txs = await asyncio.to_thread(
+            tr_fetch_history,
+            session_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    return {
+        "count": len(txs),
+        "transactions": txs,
+        "fetch_meta": get_last_history_meta(),
+    }
+
+
+@router.post("/tr/push-mapped")
+async def push_mapped_to_actual(transactions: List[ActualTransaction]):
+    serialized = _serialize_models(transactions)
+    try:
+        pushed = await asyncio.to_thread(actual_push, serialized)
+        response = {"mapped_count": len(serialized), "pushed": pushed}
+        mark_sync_success(response, scheduled=False)
+        return response
+    except Exception as e:
+        mark_sync_failure(str(e), scheduled=False)
+        raise
 
 
 

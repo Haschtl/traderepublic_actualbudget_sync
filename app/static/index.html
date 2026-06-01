@@ -398,12 +398,12 @@
         <div class="panel span-8 stack">
           <div>
             <h2>2. Synchronisieren</h2>
-            <p class="muted">Ohne Datumsbereich läuft ein schneller Sync. Sobald ein Zeitraum gesetzt ist, wird die paginierte Historie für diesen Bereich importiert.</p>
+            <p class="muted">Erst Daten aus Trade Republic oder CSV importieren und prüfen, danach genau diesen Preview-Stand nach Actual Budget pushen.</p>
           </div>
           <div class="toolbar">
-            <button id="btn-sync" class="primary">Jetzt synchronisieren</button>
-            <button id="btn-fetch" class="secondary">Nur abrufen</button>
-            <button id="btn-map" class="secondary">Mapping ansehen</button>
+            <button id="btn-map" class="secondary">TR-Import</button>
+            <button id="btn-csv-preview" class="secondary" type="button">CSV-Import</button>
+            <button id="btn-sync" class="primary">Zu Actual pushen</button>
           </div>
           <div class="field-row">
             <label>
@@ -422,10 +422,7 @@
             </label>
             <label>
               CSV-Aktion
-              <span class="toolbar">
-                <button id="btn-csv-preview" class="secondary" type="button">CSV ansehen</button>
-                <button id="btn-csv-sync" class="secondary" type="button">CSV importieren</button>
-              </span>
+              <span class="muted">Datei auswählen und oben CSV-Import & Preview starten.</span>
             </label>
           </div>
         </div>
@@ -645,18 +642,38 @@
         return payload
       }
 
-      async function fetchTxs() {
-        setStatus('Transaktionen werden abgerufen', 'Trade Republic Timeline wird geladen...')
-        const data = await requestJson('/tr/fetch', {
+      async function importTrData() {
+        const fromDate = document.getElementById('history-from').value
+        const toDate = document.getElementById('history-to').value
+        if (fromDate && toDate && fromDate > toDate) {
+          throw new Error('History von muss vor History bis liegen.')
+        }
+
+        const payload = sessionPayload()
+        let url = '/tr/fetch'
+        let bodyText = 'Trade Republic Timeline wird geladen...'
+        if (fromDate || toDate) {
+          url = '/tr/fetch-history'
+          if (fromDate) payload.from_date = fromDate
+          if (toDate) payload.to_date = toDate
+          bodyText = `Trade Republic Historie wird geladen: ${fromDate || 'Anfang'} bis ${toDate || 'heute'}`
+        }
+
+        setStatus('TR-Import läuft', bodyText)
+        const data = await requestJson(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sessionPayload())
+          body: JSON.stringify(payload)
         })
         lastRawTransactions = data.transactions || []
         writeJson('raw', lastRawTransactions)
         updateMetrics({ fetched: data.count || lastRawTransactions.length })
-        setStatus('Transaktionen abgerufen', `${data.count || lastRawTransactions.length} Buchungen geladen.`, 'success')
-        return lastRawTransactions
+        await previewMap(lastRawTransactions)
+        const fetchMeta = data.fetch_meta
+          ? ` Aus ${data.fetch_meta.pages_read ?? 0} TR-Seite(n).`
+          : ''
+        setStatus('TR-Import vorbereitet', `${data.count || lastRawTransactions.length} Buchungen geladen und gemappt.${fetchMeta}`, 'success')
+        return lastMappedTransactions
       }
 
       async function previewMap(transactions) {
@@ -731,59 +748,20 @@
         return data
       }
 
-      async function syncCsv() {
-        const csv = await readCsvFile()
-        const confirmed = confirm('CSV jetzt nach Actual Budget importieren? Duplikate werden über transaction_id/financial_id erkannt.')
+      async function pushMapped() {
+        if (!lastMappedTransactions.length) {
+          throw new Error('Bitte zuerst TR-Import & Preview oder CSV-Import & Preview ausführen.')
+        }
+        const confirmed = confirm(`${lastMappedTransactions.length} gemappte Buchungen jetzt nach Actual Budget pushen?`)
         if (!confirmed) return null
-        setStatus('CSV-Import läuft', 'CSV wird gemappt und nach Actual Budget übertragen...')
-        const data = await requestJson('/tr/csv/sync', {
+        setStatus('Push läuft', 'Der aktuelle Mapping-Preview wird nach Actual Budget übertragen...')
+        const data = await requestJson('/tr/push-mapped', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ csv })
-        })
-        updateMetrics({ fetched: data.count, mapped: data.mapped_count, pushed: data.pushed })
-        setStatus('CSV-Import abgeschlossen', summarizePush(data), 'success')
-        restoreSessionFromServer()
-        return data
-      }
-
-      async function syncAll() {
-        const fromDate = document.getElementById('history-from').value
-        const toDate = document.getElementById('history-to').value
-        if (fromDate && toDate && fromDate > toDate) {
-          setStatus('Datumsbereich ungueltig', 'History von muss vor History bis liegen.', 'error')
-          return
-        }
-
-        if (!fromDate && !toDate) {
-          setStatus('Sync läuft', 'Aktuelle Trade-Republic-Buchungen werden nach Actual übertragen...')
-          const data = await requestJson('/tr/sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(sessionPayload())
-          })
-          updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
-          setStatus('Sync abgeschlossen', summarizePush(data), 'success')
-          restoreSessionFromServer()
-          return data
-        }
-
-        const rangeText = [fromDate || 'Anfang', toDate || 'heute'].join(' bis ')
-        const confirmed = confirm(`Sync fuer Historie ${rangeText} starten? Das kann einige Minuten dauern.`)
-        if (!confirmed) return
-
-        const payload = sessionPayload()
-        if (fromDate) payload.from_date = fromDate
-        if (toDate) payload.to_date = toDate
-
-        setStatus('Historien-Sync läuft', `Importiere Zeitraum: ${rangeText}`)
-        const data = await requestJson('/tr/sync-history', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(lastMappedTransactions)
         })
         updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
-        setStatus('Historien-Sync abgeschlossen', summarizePush(data), 'success')
+        setStatus('Push abgeschlossen', summarizePush(data), 'success')
         restoreSessionFromServer()
         return data
       }
@@ -807,10 +785,6 @@
       document.getElementById('btn-clear-session').addEventListener('click', () => {
         setSessionId(null)
         setStatus('Session vergessen', 'Die lokal gespeicherte Session-ID wurde entfernt.', 'success')
-      })
-
-      document.getElementById('btn-fetch').addEventListener('click', async () => {
-        try { await fetchTxs() } catch (error) { setStatus('Abruf fehlgeschlagen', error.message, 'error') }
       })
 
       document.getElementById('btn-connect').addEventListener('click', async () => {
@@ -847,23 +821,18 @@
 
       document.getElementById('btn-map').addEventListener('click', async () => {
         try {
-          const txs = lastRawTransactions.length ? lastRawTransactions : await fetchTxs()
-          await previewMap(txs)
+          await importTrData()
         } catch (error) {
-          setStatus('Mapping fehlgeschlagen', error.message, 'error')
+          setStatus('TR-Import fehlgeschlagen', error.message, 'error')
         }
       })
 
       document.getElementById('btn-sync').addEventListener('click', async () => {
-        try { await syncAll() } catch (error) { setStatus('Sync fehlgeschlagen', error.message, 'error') }
+        try { await pushMapped() } catch (error) { setStatus('Push fehlgeschlagen', error.message, 'error') }
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {
         try { await previewCsv() } catch (error) { setStatus('CSV-Preview fehlgeschlagen', error.message, 'error') }
-      })
-
-      document.getElementById('btn-csv-sync').addEventListener('click', async () => {
-        try { await syncCsv() } catch (error) { setStatus('CSV-Import fehlgeschlagen', error.message, 'error') }
       })
 
       setSessionId(currentSessionId)
