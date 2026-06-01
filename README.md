@@ -1,22 +1,36 @@
 # Trade Republic → Actual Budget Sync
 
-A **FastAPI** service for synchronizing **Trade Republic** transactions with **Actual Budget** using the [`pytr`](https://github.com/pytr-org/pytr) and [`actualpy`](https://github.com/bvanelli/actualpy) libraries.
+A FastAPI service with a small web UI for importing Trade Republic transactions into Actual Budget.
 
----
+It supports both the Trade Republic API via [`pytr`](https://github.com/pytr-org/pytr) and exported Trade Republic CSV files. Imports are previewed first, then pushed to Actual Budget in a second explicit step.
 
-## Table of Contents
+## Features
 
-- [Quick Start (Docker)](#quick-start-docker)
-- [Environment Variables](#environment-variables)
-- [First Startup — TR Authentication](#first-startup--tr-authentication)
-- [Transaction Synchronization](#transaction-synchronization)
-- [Endpoint Reference](#endpoint-reference)
-- [Local Development](#local-development)
-- [Architecture](#architecture)
+- Trade Republic login flow with persisted sessions/cookies.
+- Two-step UI workflow:
+  - Import from Trade Republic API or CSV and preview the mapping.
+  - Push the currently previewed transactions to Actual Budget.
+- Date-range history import from the Trade Republic timeline.
+- CSV import fallback for exported Trade Republic transactions.
+- Actual import preview with planned actions before anything is written.
+- Automatic creation of two Actual accounts:
+  - `Trade Republic Cash`
+  - `Trade Republic Depot`
+- Event-type based routing:
+  - cash events go to the cash account.
+  - executed trades create Cash ↔ Depot transfers.
+  - external bank transfers can be matched against an existing Actual account.
+- Transfer matching against `ACTUAL_TRANSFER_ACCOUNT_NAME`.
+- Matched transfers are highlighted in the UI preview; hover shows the matched Actual transaction.
+- Duplicate detection through Actual `financial_id`.
+- Full Trade Republic details are written into Actual notes.
+- Pending/cleared handling.
+- Optional scheduled sync with cron syntax.
+- Last-sync state stored on disk.
+- Optional Basic Auth for UI/API.
+- Actual encrypted budget support.
 
----
-
-## Quick Start (Docker)
+## Quick Start With Docker
 
 The image is published on GitHub Container Registry:
 
@@ -24,141 +38,148 @@ The image is published on GitHub Container Registry:
 ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
 ```
 
-### 1. Download the deployment files
+Download the deployment files:
 
 ```bash
-mkdir tr-sync && cd tr-sync
+mkdir tr-sync
+cd tr-sync
 curl -O https://raw.githubusercontent.com/haschtl/traderepublic_actualbudget_sync/main/docker/docker-compose.yml
 curl -O https://raw.githubusercontent.com/haschtl/traderepublic_actualbudget_sync/main/docker/.env.example
 cp .env.example .env
 ```
 
-### 2. Configure the `.env` file
-
-Edit `.env` with your settings.
-
-### 3. Start the service
+Edit `.env` or the compose environment values, then start:
 
 ```bash
 docker compose up -d
 ```
 
-The web interface is available at **http://your-server:8000**.
+The compose file exposes the UI on:
 
----
+```text
+http://127.0.0.1:8000
+```
+
+If you run it on a server, put a reverse proxy in front of it or change the bind address deliberately.
+
+## Recommended UI Flow
+
+Open `http://127.0.0.1:8000`.
+
+1. Connect Trade Republic
+   - Start TR login.
+   - Enter the received code/PIN.
+   - The backend stores session metadata and cookies next to `TR_COOKIES_FILE`.
+
+2. Import and preview
+   - `TR-Import`: fetches current API transactions.
+   - `TR-Import` with a date range: fetches paginated history for that range.
+   - `CSV-Import`: opens a file dialog and imports an exported Trade Republic CSV.
+
+3. Review the Import Plan
+   - See target Actual account.
+   - See event type counts.
+   - See planned actions such as insert, duplicate, linked transfer, or cash import without counterpart.
+   - Transfer matches are highlighted; hover the row to see the matched Actual transaction.
+
+4. Push to Actual
+   - `Zu Actual pushen` only pushes the currently loaded/mapped preview.
+   - It does not fetch Trade Republic again.
 
 ## Environment Variables
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| APP_MODE | ✅ | `production` or `mock` |
-| SYNC_CRON | | Cron expression for automatic synchronization |
-| BASIC_AUTH_USERNAME | | Optional Basic Auth username |
-| BASIC_AUTH_PASSWORD | | Optional Basic Auth password |
-| TR_PHONE_NUMBER | ✅ | Trade Republic phone number |
-| TR_PIN | ✅ | Trade Republic PIN |
-| TR_COOKIES_FILE | | Trade Republic cookie file; session metadata is stored next to it |
-| ACTUAL_URL | ✅ | Actual Budget server URL |
-| ACTUAL_PASSWORD | | Actual server password |
-| ACTUAL_ENCRYPTION_PASSWORD | | Budget encryption password |
-| ACTUAL_BUDGET_ID | ✅ | Budget name or file ID |
-| ACTUAL_CASH_ACCOUNT_NAME | ✅ | Cash account name |
-| ACTUAL_DEPOT_ACCOUNT_NAME | ✅ | Depot account name |
-| ACTUAL_TRANSFER_ACCOUNT_NAME | | Optional transfer account |
-| TR_AUTOCREATE_TRANSFER | | Automatically create transfer counterparts |
-| TR_TRANSFER_MATCH_DAYS | | Date window for matching existing transfer counterparts |
-| TR_TRANSFER_MATCH_TOLERANCE_CENTS | | Amount tolerance in cents for transfer matching |
+| Variable | Required | Default | Description |
+| --- | --- | --- | --- |
+| `APP_MODE` | yes | `mock` locally, `production` in docker example | `production` for real APIs, `mock` for local testing |
+| `SYNC_CRON` | no | `0 1 * * *` | 5-field cron expression for scheduled sync; empty disables |
+| `BASIC_AUTH_USERNAME` | no | empty | Enables Basic Auth when username and password are both set |
+| `BASIC_AUTH_PASSWORD` | no | empty | Basic Auth password |
+| `TR_PHONE_NUMBER` | production | empty | Trade Republic phone number |
+| `TR_PIN` | production | empty | Trade Republic PIN |
+| `TR_COOKIES_FILE` | no | `./pytr_cookies.json` | Persistent cookie path; session metadata is stored next to it |
+| `ACTUAL_URL` | production | `http://localhost:5006` | Actual Budget server URL |
+| `ACTUAL_PASSWORD` | no | empty | Actual server password |
+| `ACTUAL_ENCRYPTION_PASSWORD` | if encrypted | empty | Actual budget encryption password |
+| `ACTUAL_BUDGET_ID` | production | empty | Actual budget file ID or exact name |
+| `ACTUAL_CASH_ACCOUNT_NAME` | yes | `Trade Republic Cash` | Actual cash account for TR cash transactions |
+| `ACTUAL_DEPOT_ACCOUNT_NAME` | yes | `Trade Republic Depot` | Actual depot account for investments/trades |
+| `ACTUAL_TRANSFER_ACCOUNT_NAME` | no | empty | Existing Actual account used to match external bank transfers |
+| `TR_AUTOCREATE_TRANSFER` | no | `false` | If true, creates external transfer counterparts when no match exists |
+| `TR_TRANSFER_MATCH_DAYS` | no | `3` | Date window for external transfer matching |
+| `TR_TRANSFER_MATCH_TOLERANCE_CENTS` | no | `0` | Amount tolerance for external transfer matching |
 
----
+## Account And Event Mapping
 
-## First Startup — TR Authentication
+The importer uses two Trade Republic accounts inside Actual:
 
-Trade Republic uses a two-step authentication flow (SMS code or mobile push notification).
+- `ACTUAL_CASH_ACCOUNT_NAME`
+- `ACTUAL_DEPOT_ACCOUNT_NAME`
 
-### Step 1 — Start authentication
+They are created automatically if missing.
 
-```bash
-curl -X POST http://your-server:8000/tr/connect
-```
+Event mapping:
 
-Response:
+| Event type | Actual behavior |
+| --- | --- |
+| `BANK_TRANSACTION_INCOMING` | Cash account transaction; optional external transfer matching |
+| `BANK_TRANSACTION_OUTGOING` | Cash account transaction; optional external transfer matching |
+| `TRADING_TRADE_EXECUTED` | Cash ↔ Depot transfer |
+| `INTEREST_PAYOUT` | Regular cash transaction |
+| `SSP_CORPORATE_ACTION_CASH` | Regular cash transaction |
+| `CARD_TRANSACTION` | Regular cash transaction |
+| `TAX_OPTIMIZATION` | Regular cash transaction |
+| unknown/other | Regular cash transaction with raw details in notes |
 
-```json
-{ "session_id": "abc123", "status": "pending" }
-```
+CSV export types are normalized before mapping. Supported examples:
 
-### Step 2 — Submit the received code
+| CSV type | Normalized event type |
+| --- | --- |
+| `CUSTOMER_INPAYMENT` | `BANK_TRANSACTION_INCOMING` |
+| `TRANSFER_INBOUND` | `BANK_TRANSACTION_INCOMING` |
+| `TRANSFER_OUTBOUND` | `BANK_TRANSACTION_OUTGOING` |
+| `TRANSFER_INSTANT_OUTBOUND` | `BANK_TRANSACTION_OUTGOING` |
+| `TRADING_TRADE_EXECUTED` | `TRADING_TRADE_EXECUTED` |
+| `INTEREST_PAYOUT` | `INTEREST_PAYOUT` |
+| `CARD_TRANSACTION` | `CARD_TRANSACTION` |
+| `TAX_OPTIMIZATION` | `TAX_OPTIMIZATION` |
 
-```bash
-curl -X POST http://your-server:8000/tr/complete \
-  -H "Content-Type: application/json" \
-  -d '{"code": "123456", "session_id": "abc123"}'
-```
+## Transfer Matching
 
-Response:
+External transfers are only considered for:
 
-```json
-{ "status": "connected" }
-```
+- `BANK_TRANSACTION_INCOMING`
+- `BANK_TRANSACTION_OUTGOING`
 
-Session cookies and the session metadata are stored next to `TR_COOKIES_FILE`. With `TR_COOKIES_FILE=/data/pytr_cookies.json`, per-session cookies are written under `/data/pytr_cookies_sessions/` and metadata under `/data/pytr_cookies_sessions.json`, so the Docker volume keeps them across restarts.
+If `ACTUAL_TRANSFER_ACCOUNT_NAME` is configured, the preview/import looks in that account for an existing unmatched transaction with:
 
----
+- opposite amount,
+- date within `TR_TRANSFER_MATCH_DAYS`,
+- amount tolerance `TR_TRANSFER_MATCH_TOLERANCE_CENTS`,
+- no existing `transferred_id`.
 
-## Transaction Synchronization
+When a match is found, the importer links the new Trade Republic side to the existing Actual transaction.
 
-Once authenticated:
-
-```bash
-curl -X POST http://your-server:8000/tr/sync \
-  -H "Content-Type: application/json" \
-  -d '{"session_id": "abc123"}'
-```
-
-Response:
-
-```json
-{
-  "mapped_count": 42,
-  "pushed": {
-    "status": "ok",
-    "inserted": 5,
-    "skipped": 0,
-    "duplicates": 37
-  }
-}
-```
-
-Existing transactions are detected automatically through `reconcile_transaction` and skipped.
-
-`ACTUAL_CASH_ACCOUNT_NAME` and `ACTUAL_DEPOT_ACCOUNT_NAME` are automatically created if they do not exist.
-
-`EXECUTED` transactions are imported as cleared.
-
-`PENDING` transactions are imported as pending.
-
-Actual notes contain the TR event type, status, and raw Trade Republic transaction details.
-
-### Trade Republic eventType mapping
-
-- `BANK_TRANSACTION_INCOMING` / `BANK_TRANSACTION_OUTGOING`: cash transaction with optional transfer matching.
-- `TRADING_TRADE_EXECUTED`: internal transfer between Trade Republic Cash and Trade Republic Depot.
-- `INTEREST_PAYOUT`, `SSP_CORPORATE_ACTION_CASH`, `CARD_TRANSACTION`: regular cash transaction.
-- All other event types: imported as cash transactions with raw Trade Republic details in notes.
-
-For external bank transfers, the importer first searches for an existing unmatched transaction in `ACTUAL_TRANSFER_ACCOUNT_NAME` with the opposite amount and a configurable date/tolerance window (`TR_TRANSFER_MATCH_DAYS`, `TR_TRANSFER_MATCH_TOLERANCE_CENTS`). If found, the transactions are linked as a transfer. Otherwise, no counterpart transaction is created by default.
-
-Enable automatic creation with:
+If no match exists, the default behavior is to import only the Trade Republic cash side. It does not create a fake counterpart unless explicitly enabled:
 
 ```env
 TR_AUTOCREATE_TRANSFER=true
 ```
 
-For `TRADING_TRADE_EXECUTED`, the importer tries to fetch `timelineDetailV2` and stores the detail payload in the Actual notes together with the raw transaction.
+## Notes Written To Actual
 
-### Automatic Synchronization
+Each imported transaction memo contains:
 
-The service also starts an internal scheduler.
+- original Trade Republic event type,
+- status,
+- subtitle/description if available,
+- full raw Trade Republic payload,
+- for CSV imports, the complete original CSV row.
+
+For `TRADING_TRADE_EXECUTED`, the API import also tries to fetch `timelineDetailV2` so trade details such as instrument data, fees, tax, and order details can land in the notes when Trade Republic provides them.
+
+## Scheduled Sync
+
+The service starts an internal scheduler when `SYNC_CRON` is set.
 
 Default:
 
@@ -166,59 +187,69 @@ Default:
 SYNC_CRON=0 1 * * *
 ```
 
-The scheduled sync stores its last successful run next to `TR_COOKIES_FILE` and imports from that date on the next scheduled run. Manual history import remains controlled by the date range in the UI.
+Scheduled sync uses the last successful sync date as the next lower bound. Manual history import remains controlled by the UI date range.
 
-Disable:
+Disable scheduled sync:
 
 ```env
 SYNC_CRON=
 ```
 
-Manual synchronization:
+Manual scheduler trigger:
 
 ```bash
-curl -X POST http://your-server:8000/tr/sync-now
+curl -X POST http://127.0.0.1:8000/tr/sync-now
 ```
 
----
+## API Endpoints
 
-## Encrypted Actual Budgets
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/health` | Health check |
+| `GET` | `/docs` | Swagger UI |
+| `GET` | `/tr/status` | Session and sync status |
+| `POST` | `/tr/connect` | Start Trade Republic login |
+| `POST` | `/tr/complete` | Complete login with code |
+| `POST` | `/tr/resend` | Resend login code |
+| `POST` | `/tr/fetch` | Fetch current Trade Republic API transactions |
+| `POST` | `/tr/fetch-history` | Fetch paginated Trade Republic history without pushing |
+| `POST` | `/tr/map` | Map raw TR transactions to Actual transaction shape |
+| `POST` | `/tr/preview-import` | Preview mapped transactions against Actual |
+| `POST` | `/tr/push-mapped` | Push already mapped transactions to Actual |
+| `POST` | `/tr/csv/preview` | Parse CSV, map it, and return Actual preview |
+| `POST` | `/tr/csv/sync` | Legacy CSV parse + map + push endpoint |
+| `POST` | `/tr/sync` | Legacy API fetch + map + push endpoint |
+| `POST` | `/tr/sync-history` | Legacy API history fetch + map + push endpoint |
+| `POST` | `/tr/sync-now` | Trigger scheduled sync logic immediately |
+| `GET` | `/actual/files` | List Actual budget files |
+| `POST` | `/actual/encrypt` | Enable/use budget encryption |
 
-If your Actual budget is encrypted, set:
+The web UI uses the explicit two-step endpoints: fetch/preview first, then `/tr/push-mapped`.
+
+## Actual Budget Encryption
+
+For encrypted budgets, set:
 
 ```env
 ACTUAL_ENCRYPTION_PASSWORD=your-budget-password
 ```
 
-Then:
+You can call:
 
 ```bash
-curl -X POST http://your-server:8000/actual/encrypt
+curl -X POST http://127.0.0.1:8000/actual/encrypt
 ```
 
-Future synchronizations will automatically use this password.
+Future Actual connections use the configured encryption password.
 
----
+## Security Notes
 
-## Endpoint Reference
-
-| Method | Endpoint | Description |
-|---------|----------|-------------|
-| GET | `/health` | Verify that the service is running |
-| GET | `/tr/status` | Current Trade Republic session status |
-| POST | `/tr/connect` | Start the TR authentication flow |
-| POST | `/tr/complete` | Validate authentication code |
-| POST | `/tr/resend` | Send a new authentication code |
-| POST | `/tr/fetch` | Fetch Trade Republic transactions |
-| POST | `/tr/map` | Preview transaction mapping |
-| POST | `/tr/sync` | Full fetch + map + push |
-| POST | `/tr/sync-now` | Manual sync |
-| POST | `/tr/sync-history` | Import historical transactions |
-| GET | `/actual/files` | List available Actual budgets |
-| POST | `/actual/encrypt` | Enable budget encryption |
-| GET | `/docs` | Swagger UI |
-
----
+- Use `BASIC_AUTH_USERNAME` and `BASIC_AUTH_PASSWORD` if the UI is reachable by anyone else.
+- The Docker compose example binds to `127.0.0.1:8000` by default.
+- Store cookies and state in a persistent private volume.
+- Do not commit `.env`, cookie files, session JSON, or local data directories.
+- The Docker image runs as an unprivileged user.
+- Prefer a reverse proxy with TLS for remote access.
 
 ## Local Development
 
@@ -232,30 +263,36 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-cp docker/.env.example .env
+cp .env.example .env
 
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-pytest tests/
 ```
 
----
+Run focused tests:
 
-## Architecture
+```bash
+PYTHONPATH=. pytest tests/test_scheduler.py tests/test_mapping.py tests/test_trade_republic_history.py tests/test_trade_republic_csv.py -q
+```
+
+## Project Structure
 
 ```text
 app/
 ├── api/
-│   └── routes.py          # FastAPI endpoints
+│   └── routes.py              # FastAPI endpoints
 ├── core/
-│   └── config.py          # Environment variables
+│   └── config.py              # Environment variables
 ├── mapping/
-│   └── mapper.py          # TR → Actual transformation
+│   └── mapper.py              # TR/CSV → Actual mapping
 ├── models/
-│   └── schemas.py         # Pydantic schemas
+│   └── schemas.py             # Pydantic schemas
 ├── services/
-│   ├── trade_republic.py  # Authentication and fetching via pytr
-│   └── actual.py          # Push to Actual via actualpy
+│   ├── actual.py              # Actual preview, transfer matching, push
+│   ├── scheduler.py           # Cron scheduler
+│   ├── state.py               # Last-sync state
+│   ├── trade_republic.py      # pytr login and API fetching
+│   └── trade_republic_csv.py  # CSV parser/normalizer
 └── static/
-    └── index.html         # Minimal web interface
+    ├── favicon.png
+    └── index.html             # Web UI
 ```
