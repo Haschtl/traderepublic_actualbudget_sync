@@ -343,7 +343,9 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
 
             matched_counterpart = False
             actual_match = None
+            searched_existing_counterpart = False
             if transfer_account is not None and tx.get("date") and tx.get("amount"):
+                searched_existing_counterpart = True
                 date = datetime.date.fromisoformat(tx["date"])
                 amount_eur = (tx.get("amount") or 0) / 100
                 counterpart_amount = -amount_eur if amount_eur > 0 else abs(amount_eur)
@@ -379,6 +381,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 "transfer_kind": tx.get("transfer_kind"),
                 "planned_action": planned_action,
                 "duplicate": duplicate,
+                "searched_existing_counterpart": searched_existing_counterpart,
                 "matched_existing_counterpart": matched_counterpart,
                 "actual_match": actual_match,
             })

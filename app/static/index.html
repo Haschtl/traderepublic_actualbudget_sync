@@ -298,6 +298,15 @@
         background: #d1fadf;
       }
 
+      tr.transfer-unmatched-row td {
+        background: #fef3f2;
+        border-bottom-color: #fecdca;
+      }
+
+      tr.transfer-unmatched-row:hover td {
+        background: #fee4e2;
+      }
+
       .summary-list {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -608,11 +617,24 @@
           const amount = typeof item.amount === 'number' ? (item.amount / 100).toFixed(2) : ''
           const transfer = item.transfer_account ? `<br><span class="muted">→ ${escapeHtml(item.transfer_account)}</span>` : ''
           const hasActualMatch = Boolean(item.actual_match)
-          const rowClass = hasActualMatch ? ' class="transfer-match-row"' : ''
-          const tooltip = hasActualMatch ? ` title="${escapeAttr(formatActualMatchTooltip(item.actual_match))}"` : ''
+          const searchedWithoutMatch = Boolean(
+            item.searched_existing_counterpart
+            && item.transfer_kind === 'external'
+            && !item.matched_existing_counterpart
+            && !item.duplicate
+          )
+          const rowClass = hasActualMatch
+            ? ' class="transfer-match-row"'
+            : (searchedWithoutMatch ? ' class="transfer-unmatched-row"' : '')
+          const tooltipText = hasActualMatch
+            ? formatActualMatchTooltip(item.actual_match)
+            : (searchedWithoutMatch ? formatUnmatchedTransferTooltip(item) : '')
+          const tooltip = tooltipText ? ` title="${escapeAttr(tooltipText)}"` : ''
           const action = hasActualMatch
             ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">Actual-Match</span>`
-            : escapeHtml(item.planned_action || '')
+            : (searchedWithoutMatch
+              ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">Kein Match</span>`
+              : escapeHtml(item.planned_action || ''))
           return `
             <tr${rowClass}${tooltip}>
               <td>${escapeHtml(item.date || '')}</td>
@@ -639,6 +661,22 @@
           match.imported_description ? `Import-Text: ${match.imported_description}` : null,
           match.notes ? `Notes: ${match.notes}` : null,
           match.financial_id ? `Financial ID: ${match.financial_id}` : null,
+        ].filter(Boolean).join('\n')
+      }
+
+      function formatUnmatchedTransferTooltip(item) {
+        const actionText = {
+          create_external_transfer_pair: 'Kein bestehender Transfer gefunden. Es wird ein neues Transfer-Paar zwischen Trade Republic Cash und dem konfigurierten Gegenkonto angelegt.',
+          import_cash_without_counterpart: 'Kein bestehender Transfer gefunden. Es wird defaultmäßig kein Gegenbuchungs-Transfer erstellt; importiert wird nur die Trade-Republic-Cash-Buchung als einfache Transaktion.',
+          duplicate: 'Diese Buchung ist ein Duplikat und wird nicht erneut importiert.',
+        }[item.planned_action] || `Kein bestehender Transfer gefunden. Geplante Aktion: ${item.planned_action || 'unbekannt'}.`
+
+        return [
+          'Kein Transfer-Match in Actual gefunden',
+          item.transfer_account ? `Gesuchtes Gegenkonto: ${item.transfer_account}` : null,
+          item.date ? `TR-Datum: ${item.date}` : null,
+          typeof item.amount === 'number' ? `TR-Betrag: ${(item.amount / 100).toFixed(2)}` : null,
+          actionText,
         ].filter(Boolean).join('\n')
       }
 
