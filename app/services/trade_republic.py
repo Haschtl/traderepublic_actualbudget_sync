@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from app.core.config import settings
 from app.services.state import load_state
 import asyncio
@@ -17,6 +17,7 @@ SESSIONS = {}
 SESSIONS_LOCK = threading.RLock()
 API_CLIENTS = {}
 LEGACY_SESSIONS_PATH = Path('/tmp/ab_tr_2_tr_sessions.json')
+LAST_HISTORY_META: Dict = {}
 
 
 def _normalize_phone_number(phone: str | None) -> str | None:
@@ -377,6 +378,15 @@ def _enrich_trade_details(api, items: List[Dict]) -> List[Dict]:
     return items
 
 
+def get_last_history_meta() -> Dict:
+    return dict(LAST_HISTORY_META)
+
+
+def _set_last_history_meta(meta: Dict) -> None:
+    global LAST_HISTORY_META
+    LAST_HISTORY_META = dict(meta)
+
+
 def _filter_timestamp(value: str | None, *, end_of_day: bool = False) -> float:
     parsed = _parse_filter_date(value)
     if parsed is None:
@@ -386,6 +396,131 @@ def _filter_timestamp(value: str | None, *, end_of_day: bool = False) -> float:
     else:
         parsed_dt = datetime.combine(parsed, datetime.min.time())
     return parsed_dt.timestamp()
+
+
+def _next_timeline_cursor(cursors: Dict | None) -> str | None:
+    if not isinstance(cursors, dict):
+        return None
+    for key in ("after", "next", "before"):
+        value = cursors.get(key)
+        if value:
+            return value
+    return None
+
+
+async def _receive_subscription_response(api, subscription_id: str, timeout: int = 30) -> Dict:
+    while True:
+        response_id, _subscription, payload = await asyncio.wait_for(api.recv(), timeout=timeout)
+        if response_id == subscription_id:
+            return payload
+
+
+async def _unsubscribe_safely(api, subscription_id: str) -> None:
+    try:
+        await api.unsubscribe(subscription_id)
+    except Exception as exc:
+        log.debug("Timeline unsubscribe failed for %s: %s", subscription_id, exc)
+
+
+async def _fetch_trade_detail(api, item_id: str) -> Dict:
+    subscription_id = await api.timeline_detail_v2(item_id)
+    try:
+        return await _receive_subscription_response(api, subscription_id)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
+async def _fetch_timeline_transactions_paginated(
+    api,
+    *,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    max_pages: int = 1000,
+) -> Tuple[List[Dict], Dict]:
+    start = _parse_filter_date(from_date)
+    end = _parse_filter_date(to_date)
+    cursor = None
+    pages: list[Dict] = []
+    items: list[Dict] = []
+    seen_ids: set[str] = set()
+
+    for page_number in range(1, max_pages + 1):
+        subscription_id = await api.timeline_transactions(cursor)
+        try:
+            response = await _receive_subscription_response(api, subscription_id)
+        finally:
+            await _unsubscribe_safely(api, subscription_id)
+
+        if not isinstance(response, dict):
+            pages.append({
+                "page": page_number,
+                "cursor": cursor,
+                "items": 0,
+                "error": f"unexpected response type {type(response).__name__}",
+            })
+            break
+
+        page_items = response.get("items") or []
+        cursors = response.get("cursors") or {}
+        next_cursor = _next_timeline_cursor(cursors)
+        accepted = 0
+        page_dates = []
+
+        for item in page_items:
+            tx_date = _transaction_date(item)
+            if tx_date is not None:
+                page_dates.append(tx_date)
+            if tx_date is not None and start is not None and tx_date < start:
+                continue
+            if tx_date is not None and end is not None and tx_date > end:
+                continue
+
+            item_id = str(item.get("id") or item.get("id_externe") or "")
+            if item_id and item_id in seen_ids:
+                continue
+            if item_id:
+                seen_ids.add(item_id)
+            items.append(item)
+            accepted += 1
+
+        pages.append({
+            "page": page_number,
+            "cursor": cursor,
+            "items": len(page_items),
+            "accepted": accepted,
+            "next_cursor": bool(next_cursor),
+            "cursor_keys": sorted(cursors.keys()),
+        })
+
+        if start is not None and page_dates and max(page_dates) < start:
+            break
+        if not next_cursor:
+            break
+        if next_cursor == cursor:
+            log.warning("Timeline pagination stopped because cursor did not advance: %s", cursor)
+            break
+        cursor = next_cursor
+
+    for item in items:
+        if item.get("eventType") != "TRADING_TRADE_EXECUTED":
+            continue
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        try:
+            item["timelineDetailV2"] = await _fetch_trade_detail(api, item_id)
+        except Exception as exc:
+            item["timelineDetailV2_error"] = str(exc)
+            log.warning("timelineDetailV2 failed for %s: %s", item_id, exc)
+
+    meta = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "pages_read": len(pages),
+        "items_returned": len(items),
+        "pages": pages,
+    }
+    return items, meta
 
 
 def fetch_all_transactions(
@@ -398,11 +533,19 @@ def fetch_all_transactions(
     if settings.app_mode == "mock":
         start = _parse_filter_date(from_date)
         end = _parse_filter_date(to_date)
-        return [
+        items = [
             item for item in _SAMPLE
             if ((tx_date := _transaction_date(item)) is None)
             or ((start is None or tx_date >= start) and (end is None or tx_date <= end))
         ]
+        _set_last_history_meta({
+            "from_date": from_date,
+            "to_date": to_date,
+            "pages_read": 1,
+            "items_returned": len(items),
+            "pages": [{"page": 1, "items": len(_SAMPLE), "accepted": len(items), "next_cursor": False}],
+        })
+        return items
 
     _load_sessions()
 
@@ -431,34 +574,18 @@ def fetch_all_transactions(
         log.warning("fetch_all_transactions: resume_websession a échoué; les cookies sont peut-être expirés")
 
     try:
-        from pytr.timeline import Timeline
-
         _reset_api_async_state(api)
-        timeline = Timeline(
+        items, meta = asyncio.run(_fetch_timeline_transactions_paginated(
             api,
-            _sessions_dir() / "timeline",
-            not_before=_filter_timestamp(from_date),
-            not_after=_filter_timestamp(to_date, end_of_day=True),
-            store_event_database=False,
-            scan_for_duplicates=False,
-            dump_raw_data=False,
-        )
-        asyncio.run(timeline.tl_loop())
-
-        details_by_id = {
-            event.get("id"): event.get("details")
-            for event in timeline.events
-            if event.get("id") and event.get("details") is not None
-        }
-        items = list(timeline.timeline_transactions.values())
-        for item in items:
-            detail = details_by_id.get(item.get("id"))
-            if detail is not None:
-                item["timelineDetailV2"] = detail
-
+            from_date=from_date,
+            to_date=to_date,
+            max_pages=max_pages,
+        ))
+        _set_last_history_meta(meta)
         log.info(
-            "fetch_all_transactions: %d transaction(s) récupérée(s) au total via Timeline",
+            "fetch_all_transactions: %d transaction(s) récupérée(s) sur %d page(s)",
             len(items),
+            meta.get("pages_read"),
         )
         return items
 

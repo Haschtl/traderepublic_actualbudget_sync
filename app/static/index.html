@@ -726,13 +726,18 @@
 
       function summarizePush(data) {
         const pushed = data.pushed || {}
-        if (pushed.status === 'mocked') return `${data.mapped_count ?? pushed.accepted ?? 0} Buchungen im Mock-Modus akzeptiert.`
-        return [
+        const fetchMeta = data.fetch_meta
+          ? `TR: ${data.fetch_meta.items_returned ?? 0} Treffer aus ${data.fetch_meta.pages_read ?? 0} Seite(n)`
+          : null
+        const parts = [
           `${data.mapped_count ?? 0} gemappt`,
           `${pushed.inserted ?? 0} importiert`,
           `${pushed.duplicates ?? 0} Duplikate`,
           `${pushed.skipped ?? 0} uebersprungen`
-        ].join(', ')
+        ]
+        if (fetchMeta) parts.unshift(fetchMeta)
+        if (pushed.status === 'mocked') return `${data.mapped_count ?? pushed.accepted ?? 0} Buchungen im Mock-Modus akzeptiert.`
+        return parts.join(', ')
       }
 
       document.getElementById('btn-clear-session').addEventListener('click', () => {

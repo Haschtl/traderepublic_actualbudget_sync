@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.mapping.mapper import map_pytr_to_actual
 from app.services.actual import push_transactions
 from app.services.state import load_state, mark_sync_failure, mark_sync_success
-from app.services.trade_republic import fetch_all_transactions, fetch_transactions
+from app.services.trade_republic import fetch_all_transactions, fetch_transactions, get_last_history_meta
 
 log = logging.getLogger(__name__)
 
@@ -97,7 +97,10 @@ def parse_cron(expr: str) -> CronSchedule:
 async def run_scheduled_sync() -> dict:
     state = load_state()
     from_date = (state.get("last_successful_sync_at") or "")[:10] or None
-    fetcher = (lambda: fetch_all_transactions(from_date=from_date)) if from_date else fetch_transactions
+    if from_date:
+        fetcher = lambda: (fetch_all_transactions(from_date=from_date), get_last_history_meta())
+    else:
+        fetcher = fetch_transactions
     return await _run_sync(fetcher, scheduled=True)
 
 
@@ -107,7 +110,7 @@ async def run_history_sync(
     to_date: str | None = None,
 ) -> dict:
     return await _run_sync(
-        lambda: fetch_all_transactions(session_id, from_date=from_date, to_date=to_date),
+        lambda: (fetch_all_transactions(session_id, from_date=from_date, to_date=to_date), get_last_history_meta()),
         scheduled=False,
     )
 
@@ -119,10 +122,17 @@ async def _run_sync(fetcher, *, scheduled: bool = False) -> dict:
 
     async with _sync_lock:
         try:
-            txs = await asyncio.to_thread(fetcher)
+            fetched = await asyncio.to_thread(fetcher)
+            fetch_meta = None
+            if isinstance(fetched, tuple) and len(fetched) == 2:
+                txs, fetch_meta = fetched
+            else:
+                txs = fetched
             mapped = map_pytr_to_actual(txs)
             pushed = await asyncio.to_thread(push_transactions, mapped)
             result = {"mapped_count": len(mapped), "pushed": pushed}
+            if fetch_meta:
+                result["fetch_meta"] = fetch_meta
             mark_sync_success(result, scheduled=scheduled)
             log.info("Sync completed: %s", result)
             return result
