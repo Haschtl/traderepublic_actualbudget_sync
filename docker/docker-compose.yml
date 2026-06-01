@@ -32,10 +32,13 @@ services:
       # ID ou nom exact du fichier budget dans Actual
       # → Obtenez-le via GET /actual/files après le démarrage
       ACTUAL_BUDGET_ID: "Mon Budget"
-      # Nom exact du compte dans lequel importer les transactions
-      ACTUAL_ACCOUNT_NAME: "Trade Republic"
-      # Optional : compte opposé pour importer dépôts/retraits comme transfers
+      # Comptes Actual auto-créés pour Trade Republic
+      ACTUAL_CASH_ACCOUNT_NAME: "Trade Republic Cash"
+      ACTUAL_DEPOT_ACCOUNT_NAME: "Trade Republic Depot"
+      # Optional : compte externe pour BANK_TRANSACTION_INCOMING/OUTGOING
       ACTUAL_TRANSFER_ACCOUNT_NAME: ""
+      # Optional : crée une contre-écriture externe si aucun match n'existe
+      TR_AUTOCREATE_TRANSFER: "false"
 
     volumes:
       # Persistance des cookies Trade Republic entre les redémarrages

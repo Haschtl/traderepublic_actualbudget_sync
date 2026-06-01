@@ -1,30 +1,30 @@
 # Trade Republic → Actual Budget Sync
 
-Service **FastAPI** permettant de synchroniser les transactions **Trade Republic** vers **Actual Budget** via les bibliothèques [`pytr`](https://github.com/pytr-org/pytr) et [`actualpy`](https://github.com/bvanelli/actualpy).
+A **FastAPI** service for synchronizing **Trade Republic** transactions with **Actual Budget** using the [`pytr`](https://github.com/pytr-org/pytr) and [`actualpy`](https://github.com/bvanelli/actualpy) libraries.
 
 ---
 
-## Sommaire
+## Table of Contents
 
-- [Déploiement rapide (Docker)](#déploiement-rapide-docker)
-- [Variables d'environnement](#variables-denvironnement)
-- [Premier démarrage — Authentification TR](#premier-démarrage--authentification-tr)
-- [Synchronisation des transactions](#synchronisation-des-transactions)
-- [Référence des endpoints](#référence-des-endpoints)
-- [Développement local](#développement-local)
+- [Quick Start (Docker)](#quick-start-docker)
+- [Environment Variables](#environment-variables)
+- [First Startup — TR Authentication](#first-startup--tr-authentication)
+- [Transaction Synchronization](#transaction-synchronization)
+- [Endpoint Reference](#endpoint-reference)
+- [Local Development](#local-development)
 - [Architecture](#architecture)
 
 ---
 
-## Déploiement rapide (Docker)
+## Quick Start (Docker)
 
-L'image est publiée sur GitHub Container Registry :
+The image is published on GitHub Container Registry:
 
-```
+```text
 ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
 ```
 
-### 1. Récupérer les fichiers de déploiement
+### 1. Download the deployment files
 
 ```bash
 mkdir tr-sync && cd tr-sync
@@ -33,79 +33,59 @@ curl -O https://raw.githubusercontent.com/haschtl/traderepublic_actualbudget_syn
 cp .env.example .env
 ```
 
-### 2. Configurer le fichier `.env`
+### 2. Configure the `.env` file
 
-Éditez `.env` avec vos informations :
+Edit `.env` with your settings.
 
-```env
-APP_MODE=production
-SYNC_CRON=0 1 * * *
-BASIC_AUTH_USERNAME=
-BASIC_AUTH_PASSWORD=
-
-TR_PHONE_NUMBER=+33600000000
-TR_PIN=1234
-
-ACTUAL_URL=http://your-actual-server:5006
-ACTUAL_PASSWORD=your-password
-ACTUAL_ENCRYPTION_PASSWORD=
-ACTUAL_BUDGET_ID=Mon Budget
-ACTUAL_ACCOUNT_NAME=Trade Republic
-ACTUAL_TRANSFER_ACCOUNT_NAME=
-```
-
-> **Astuce** : Si vous ne connaissez pas votre `ACTUAL_BUDGET_ID`, laissez-le vide, démarrez le service, puis appelez `GET /actual/files` pour lister les budgets disponibles.
-
-### 3. Démarrer le service
+### 3. Start the service
 
 ```bash
 docker compose up -d
 ```
 
-L'interface web est accessible sur **http://your-server:8000**.
+The web interface is available at **http://your-server:8000**.
 
 ---
 
-## Variables d'environnement
+## Environment Variables
 
-| Variable             | Obligatoire | Description                                                           | Exemple                      |
-|----------------------|:-----------:|-----------------------------------------------------------------------|------------------------------|
-| `APP_MODE`           | ✅           | `production` ou `mock` (simule les API)                               | `production`                 |
-| `SYNC_CRON`          |             | Cron 5 champs pour le sync automatique. Vide = désactivé              | `0 0 * * *`                  |
-| `BASIC_AUTH_USERNAME`|             | Utilisateur Basic Auth optionnel pour protéger UI/API                 | `admin`                      |
-| `BASIC_AUTH_PASSWORD`|             | Mot de passe Basic Auth optionnel                                     | `change-me`                  |
-| `TR_PHONE_NUMBER`    | ✅           | Numéro de téléphone Trade Republic (format international)             | `+33600000000`               |
-| `TR_PIN`             | ✅           | Code PIN Trade Republic (4 chiffres)                                  | `1234`                       |
-| `TR_COOKIES_FILE`    |             | Chemin du fichier de cookies TR (persistance de session)              | `/data/pytr_cookies.json`    |
-| `ACTUAL_URL`         | ✅           | URL de votre instance Actual Budget                                   | `http://localhost:5006`      |
-| `ACTUAL_PASSWORD`    |             | Mot de passe Actual Budget                                            | `my-secret`                  |
-| `ACTUAL_ENCRYPTION_PASSWORD` |     | Mot de passe du fichier budget chiffré Actual                         | `budget-secret`              |
-| `ACTUAL_BUDGET_ID`   | ✅           | Nom exact ou `file_id` du budget (voir `GET /actual/files`)           | `Mon Budget`                 |
-| `ACTUAL_ACCOUNT_NAME`| ✅           | Nom exact du compte dans lequel importer les transactions             | `Trade Republic`             |
-| `ACTUAL_TRANSFER_ACCOUNT_NAME` |   | Compte opposé optionnel pour importer dépôts/retraits comme transfers | `Compte courant`             |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| APP_MODE | ✅ | `production` or `mock` |
+| SYNC_CRON | | Cron expression for automatic synchronization |
+| BASIC_AUTH_USERNAME | | Optional Basic Auth username |
+| BASIC_AUTH_PASSWORD | | Optional Basic Auth password |
+| TR_PHONE_NUMBER | ✅ | Trade Republic phone number |
+| TR_PIN | ✅ | Trade Republic PIN |
+| TR_COOKIES_FILE | | Trade Republic cookie file |
+| ACTUAL_URL | ✅ | Actual Budget server URL |
+| ACTUAL_PASSWORD | | Actual server password |
+| ACTUAL_ENCRYPTION_PASSWORD | | Budget encryption password |
+| ACTUAL_BUDGET_ID | ✅ | Budget name or file ID |
+| ACTUAL_CASH_ACCOUNT_NAME | ✅ | Cash account name |
+| ACTUAL_DEPOT_ACCOUNT_NAME | ✅ | Depot account name |
+| ACTUAL_TRANSFER_ACCOUNT_NAME | | Optional transfer account |
+| TR_AUTOCREATE_TRANSFER | | Automatically create transfer counterparts |
 
 ---
 
-## Premier démarrage — Authentification TR
+## First Startup — TR Authentication
 
-Trade Republic utilise un flux d'authentification en 2 étapes (code SMS ou notification mobile).
+Trade Republic uses a two-step authentication flow (SMS code or mobile push notification).
 
-### Étape 1 — Démarrer le flux
-
-Ouvrez l'interface web sur **http://your-server:8000** et cliquez sur **Se connecter à Trade Republic**, ou via curl :
+### Step 1 — Start authentication
 
 ```bash
 curl -X POST http://your-server:8000/tr/connect
 ```
 
-Réponse :
+Response:
+
 ```json
 { "session_id": "abc123", "status": "pending" }
 ```
 
-Trade Republic vous envoie un code PIN par SMS ou notification mobile.
-
-### Étape 2 — Entrer le code reçu
+### Step 2 — Submit the received code
 
 ```bash
 curl -X POST http://your-server:8000/tr/complete \
@@ -113,18 +93,19 @@ curl -X POST http://your-server:8000/tr/complete \
   -d '{"code": "123456", "session_id": "abc123"}'
 ```
 
-Réponse :
+Response:
+
 ```json
 { "status": "connected" }
 ```
 
-> Les cookies de session sont sauvegardés dans `TR_COOKIES_FILE`. Les prochains démarrages ne nécessitent pas de ré-authentification tant que la session reste valide.
+Session cookies are stored in `TR_COOKIES_FILE`.
 
 ---
 
-## Synchronisation des transactions
+## Transaction Synchronization
 
-Une fois authentifié, lancez une synchronisation complète :
+Once authenticated:
 
 ```bash
 curl -X POST http://your-server:8000/tr/sync \
@@ -132,7 +113,8 @@ curl -X POST http://your-server:8000/tr/sync \
   -d '{"session_id": "abc123"}'
 ```
 
-Réponse :
+Response:
+
 ```json
 {
   "mapped_count": 42,
@@ -145,127 +127,109 @@ Réponse :
 }
 ```
 
-Les transactions déjà présentes dans Actual Budget sont automatiquement détectées et ignorées grâce à `reconcile_transaction`.
+Existing transactions are detected automatically through `reconcile_transaction` and skipped.
 
-Le compte cible `ACTUAL_ACCOUNT_NAME` est créé automatiquement s'il n'existe pas encore. Les transactions `EXECUTED` sont importées comme cleared, les transactions `PENDING` comme pending/non-cleared. Les notes Actual contiennent le `eventType`, le status et les détails bruts Trade Republic de la transaction.
+`ACTUAL_CASH_ACCOUNT_NAME` and `ACTUAL_DEPOT_ACCOUNT_NAME` are automatically created if they do not exist.
 
-Si `ACTUAL_TRANSFER_ACCOUNT_NAME` est défini, les dépôts/retraits Trade Republic reconnus comme transfers sont importés comme vrais transfers Actual entre ce compte et `ACTUAL_ACCOUNT_NAME`. Le compte opposé est aussi créé automatiquement si besoin. Avant de créer la contre-écriture, l'import cherche dans le compte opposé une transaction existante non liée avec le montant inverse et une date à ±3 jours ; si elle existe, elle est reliée comme transfer au lieu de créer un doublon.
+`EXECUTED` transactions are imported as cleared.
 
-### Synchronisation automatique
+`PENDING` transactions are imported as pending.
 
-Le service lance aussi un scheduler interne au démarrage. Par défaut, `SYNC_CRON=0 1 * * *` exécute `/tr/sync` une fois par jour à 00:00, selon l'heure du conteneur. Pour désactiver le scheduler, définissez `SYNC_CRON=`. Le format supporté est un cron à 5 champs avec `*`, listes, plages et pas, par exemple `*/30 * * * *` ou `0 */6 * * *`.
+Actual notes contain the TR event type, status, and raw Trade Republic transaction details.
 
-Un verrou empêche deux synchronisations de tourner en parallèle. Si un sync manuel est nécessaire avec le même verrou, utilisez :
+### Trade Republic eventType mapping
+
+- `BANK_TRANSACTION_INCOMING` / `BANK_TRANSACTION_OUTGOING`: cash transaction with optional transfer matching.
+- `TRADING_TRADE_EXECUTED`: internal transfer between Trade Republic Cash and Trade Republic Depot.
+- `INTEREST_PAYOUT`, `SSP_CORPORATE_ACTION_CASH`, `CARD_TRANSACTION`: regular cash transaction.
+- All other event types: imported as cash transactions with raw Trade Republic details in notes.
+
+For external bank transfers, the importer first searches for an existing unmatched transaction in `ACTUAL_TRANSFER_ACCOUNT_NAME` with the opposite amount and a date within ±3 days. If found, the transactions are linked as a transfer. Otherwise, no counterpart transaction is created by default.
+
+Enable automatic creation with:
+
+```env
+TR_AUTOCREATE_TRANSFER=true
+```
+
+### Automatic Synchronization
+
+The service also starts an internal scheduler.
+
+Default:
+
+```env
+SYNC_CRON=0 1 * * *
+```
+
+Disable:
+
+```env
+SYNC_CRON=
+```
+
+Manual synchronization:
 
 ```bash
 curl -X POST http://your-server:8000/tr/sync-now
 ```
 
-### Budgets Actual chiffrés
+---
 
-Si votre budget Actual est déjà chiffré, renseignez `ACTUAL_ENCRYPTION_PASSWORD` avec le mot de passe de chiffrement du fichier budget. Ce mot de passe est différent de `ACTUAL_PASSWORD`, qui sert uniquement à se connecter au serveur Actual.
+## Encrypted Actual Budgets
 
-Pour activer le chiffrement sur le budget configuré dans `ACTUAL_BUDGET_ID`, définissez `ACTUAL_ENCRYPTION_PASSWORD`, puis appelez :
+If your Actual budget is encrypted, set:
+
+```env
+ACTUAL_ENCRYPTION_PASSWORD=your-budget-password
+```
+
+Then:
 
 ```bash
 curl -X POST http://your-server:8000/actual/encrypt
 ```
 
-Ensuite, les appels `/tr/sync` utiliseront automatiquement ce mot de passe pour ouvrir et synchroniser le budget chiffré.
+Future synchronizations will automatically use this password.
 
 ---
 
-## Référence des endpoints
+## Endpoint Reference
 
-| Méthode | Endpoint          | Description                                                    |
-|---------|-------------------|----------------------------------------------------------------|
-| `GET`   | `/health`         | Vérification que le service tourne                             |
-| `GET`   | `/tr/status`      | Statut de la session Trade Republic en cours                   |
-| `POST`  | `/tr/connect`     | Démarre le flux d'auth TR (envoie le code SMS/notification)    |
-| `POST`  | `/tr/complete`    | Body: `{"code": "...", "session_id": "..."}` — valide le code  |
-| `POST`  | `/tr/resend`      | Body: `{"session_id": "..."}` — renvoie un nouveau code        |
-| `POST`  | `/tr/fetch`       | Body: `{"session_id": "..."}` — récupère les transactions TR   |
-| `POST`  | `/tr/map`         | Body: liste de transactions pytr — retourne le mapping preview |
-| `POST`  | `/tr/sync`        | Body: `{"session_id": "..."}` — fetch + map + push complet     |
-| `POST`  | `/tr/sync-now`    | Lance un sync manuel avec le verrou du scheduler               |
-| `POST`  | `/tr/sync-history`| Body: `{"session_id": "...", "from_date": "YYYY-MM-DD", "to_date": "YYYY-MM-DD"}` — importe l'historique paginée |
-| `GET`   | `/actual/files`   | Liste les budgets disponibles sur le serveur Actual Budget     |
-| `POST`  | `/actual/encrypt` | Active le chiffrement du budget configuré                      |
-| `GET`   | `/docs`           | Documentation interactive Swagger UI                           |
-
----
-
-## Déploiement avec Actual Budget sur le même serveur
-
-Si vous faites tourner Actual Budget via Docker sur le même serveur, utilisez ce `docker-compose.yml` combiné :
-
-```yaml
-services:
-  actual-budget:
-    image: docker.io/actualbudget/actual-server:latest
-    ports:
-      - "5006:5006"
-    volumes:
-      - actual_data:/data
-    networks:
-      - sync_network
-
-  tr-sync:
-    image: ghcr.io/haschtl/traderepublic_actualbudget_sync:latest
-    ports:
-      - "127.0.0.1:8000:8000"
-    environment:
-      APP_MODE: production
-      SYNC_CRON: "0 1 * * *"
-      BASIC_AUTH_USERNAME: ""
-      BASIC_AUTH_PASSWORD: ""
-      TR_PHONE_NUMBER: "+33600000000"
-      TR_PIN: "1234"
-      TR_COOKIES_FILE: /data/pytr_cookies.json
-      ACTUAL_URL: "http://actual-budget:5006"
-      ACTUAL_PASSWORD: "votre-mot-de-passe"
-      ACTUAL_ENCRYPTION_PASSWORD: ""
-      ACTUAL_BUDGET_ID: "Mon Budget"
-      ACTUAL_ACCOUNT_NAME: "Trade Republic"
-      ACTUAL_TRANSFER_ACCOUNT_NAME: ""
-    volumes:
-      - tr_data:/data
-    depends_on:
-      - actual-budget
-    networks:
-      - sync_network
-
-volumes:
-  actual_data:
-  tr_data:
-
-networks:
-  sync_network:
-```
+| Method | Endpoint | Description |
+|---------|----------|-------------|
+| GET | `/health` | Verify that the service is running |
+| GET | `/tr/status` | Current Trade Republic session status |
+| POST | `/tr/connect` | Start the TR authentication flow |
+| POST | `/tr/complete` | Validate authentication code |
+| POST | `/tr/resend` | Send a new authentication code |
+| POST | `/tr/fetch` | Fetch Trade Republic transactions |
+| POST | `/tr/map` | Preview transaction mapping |
+| POST | `/tr/sync` | Full fetch + map + push |
+| POST | `/tr/sync-now` | Manual sync |
+| POST | `/tr/sync-history` | Import historical transactions |
+| GET | `/actual/files` | List available Actual budgets |
+| POST | `/actual/encrypt` | Enable budget encryption |
+| GET | `/docs` | Swagger UI |
 
 ---
 
-## Développement local
+## Local Development
 
 ```bash
-# Cloner le repo
 git clone https://github.com/haschtl/traderepublic_actualbudget_sync.git
 cd traderepublic_actualbudget_sync
 
-# Créer l'environnement virtuel
 python3 -m venv .venv
 source .venv/bin/activate
+
 pip install --upgrade pip
 pip install -r requirements.txt
 
-# Configurer l'environnement
 cp docker/.env.example .env
-# Éditer .env...
 
-# Lancer en mode développement
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
-# Lancer les tests
 pytest tests/
 ```
 
@@ -273,22 +237,19 @@ pytest tests/
 
 ## Architecture
 
-```
+```text
 app/
 ├── api/
-│   └── routes.py          # Endpoints FastAPI
+│   └── routes.py          # FastAPI endpoints
 ├── core/
-│   └── config.py          # Variables d'environnement
+│   └── config.py          # Environment variables
 ├── mapping/
-│   └── mapper.py          # Transformation TR → Actual
+│   └── mapper.py          # TR → Actual transformation
 ├── models/
-│   └── schemas.py         # Schémas Pydantic
+│   └── schemas.py         # Pydantic schemas
 ├── services/
-│   ├── trade_republic.py  # Auth et fetch via pytr
-│   └── actual.py          # Push vers Actual via actualpy
+│   ├── trade_republic.py  # Authentication and fetching via pytr
+│   └── actual.py          # Push to Actual via actualpy
 └── static/
-    └── index.html         # Interface web minimaliste
-docker/
-├── docker-compose.yml     # Exemple de déploiement
-└── .env.example           # Template de configuration
+    └── index.html         # Minimal web interface
 ```

@@ -80,6 +80,8 @@ def test_map_real_tr_format():
     assert etf["amount"] == -3700   # -37 EUR → -3700 centimes
     assert etf["currency"] == "EUR"
     assert etf["source_id"] == "2d3d0883-00b0-43aa-ad98-396f9bd5db6d"
+    assert etf["is_transfer"] is False
+    assert etf["transfer_kind"] is None
 
     card = mapped[1]
     assert card["date"] == "2026-05-10"
@@ -90,6 +92,34 @@ def test_map_real_tr_format():
     pending = mapped[2]
     assert pending["pending"] is True
     assert pending["cleared"] is False
+
+
+def test_bank_transactions_are_external_transfers_only():
+    mapped = map_pytr_to_actual([
+        {
+            "id": "bank-in",
+            "timestamp": "2026-05-12T10:00:00.000+0000",
+            "title": "SEPA Einzahlung",
+            "amount": {"currency": "EUR", "value": 100, "fractionDigits": 2},
+            "status": "EXECUTED",
+            "eventType": "BANK_TRANSACTION_INCOMING",
+        },
+        {
+            "id": "trade",
+            "timestamp": "2026-05-12T11:00:00.000+0000",
+            "title": "ETF Kauf",
+            "amount": {"currency": "EUR", "value": -50, "fractionDigits": 2},
+            "status": "EXECUTED",
+            "eventType": "TRADING_TRADE_EXECUTED",
+        },
+    ])
+
+    assert mapped[0]["account_key"] == "cash"
+    assert mapped[0]["transfer_kind"] == "external"
+    assert mapped[0]["is_transfer"] is True
+    assert mapped[1]["account_key"] == "cash"
+    assert mapped[1]["transfer_kind"] == "depot"
+    assert mapped[1]["is_transfer"] is True
 
 
 def test_map_real_tr_format_memo():

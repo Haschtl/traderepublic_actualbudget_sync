@@ -56,3 +56,5 @@ class ActualTransaction(BaseModel):
     cleared: Optional[bool] = True
     pending: Optional[bool] = False
     is_transfer: Optional[bool] = False
+    account_key: Optional[str] = "cash"
+    transfer_kind: Optional[str] = None

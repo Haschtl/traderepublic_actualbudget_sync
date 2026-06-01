@@ -61,8 +61,9 @@ def _create_or_link_transfer(
     payee: str,
     cleared: bool,
     pending: bool,
+    allow_create_pair: bool,
 ):
-    from actual.queries import create_transaction_from_ids, create_transfer
+    from actual.queries import create_transaction, create_transaction_from_ids, create_transfer
 
     if amount_eur > 0:
         source_account = transfer_account
@@ -109,7 +110,7 @@ def _create_or_link_transfer(
         if imported_id and not existing_counterpart.financial_id:
             existing_counterpart.financial_id = f"{imported_id}:counterpart"
         return main_tx, existing_counterpart, True
-    if settings.autocreate_transfer is True:
+    if allow_create_pair:
         source_tx, dest_tx = create_transfer(
             session,
             date=date,
@@ -129,23 +130,22 @@ def _create_or_link_transfer(
         main_tx.pending = int(pending)
         counterpart_tx.pending = int(pending)
         return main_tx, counterpart_tx, False
-    else:
-        main_tx = create_transaction_from_ids(
-            session,
-            date,
-            account.id,
-            transfer_account.payee.id,
-            notes,
-            None,
-            main_amount,
-            imported_id,
-            cleared,
-            payee,
-            process_payee=False,
-        )
-        main_tx.pending = int(pending)
-        main_tx.imported_description = payee
-        return main_tx, None, False
+
+    main_tx = create_transaction(
+        session,
+        date=date,
+        account=account,
+        payee=payee,
+        notes=notes,
+        amount=main_amount,
+        imported_id=imported_id,
+        cleared=cleared,
+        imported_payee=payee,
+    )
+    main_tx.pending = int(pending)
+    main_tx.imported_description = payee
+    return main_tx, None, False
+
 
 def list_budget_files() -> List[Dict[str, Any]]:
     """Retourne la liste des fichiers budgets disponibles sur le serveur Actual.
@@ -243,7 +243,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
     try:
         from actual import Actual
-        from actual.queries import create_transfer, get_or_create_account, reconcile_transaction
+        from actual.queries import get_or_create_account, reconcile_transaction
     except ImportError as e:
         raise NotImplementedError(
             "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
@@ -253,15 +253,16 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     password = settings.actual_password
     encryption_password = settings.actual_encryption_password
     budget_id = settings.actual_budget_id
-    account_name = settings.actual_account_name
+    cash_account_name = settings.actual_cash_account_name
+    depot_account_name = settings.actual_depot_account_name
     transfer_account_name = settings.actual_transfer_account_name
 
     if not url:
         raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
-    if not account_name:
+    if not cash_account_name:
         raise NotImplementedError(
-            "ACTUAL_ACCOUNT_NAME non configuré. "
-            "Indiquez le nom exact du compte Actual cible dans votre .env."
+            "ACTUAL_CASH_ACCOUNT_NAME non configuré. "
+            "Indiquez le nom exact du compte cash Actual cible dans votre .env."
         )
 
     inserted = 0
@@ -277,7 +278,8 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             encryption_password=encryption_password or None,
         ) as actual:
             session = actual.session
-            account = get_or_create_account(session, account_name)
+            cash_account = get_or_create_account(session, cash_account_name)
+            depot_account = get_or_create_account(session, depot_account_name)
             transfer_account = (
                 get_or_create_account(session, transfer_account_name)
                 if transfer_account_name
@@ -308,9 +310,11 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                 cleared = bool(tx.get("cleared"))
                 pending = _is_truthy(tx.get("pending"))
                 is_transfer = _is_truthy(tx.get("is_transfer"))
+                transfer_kind = tx.get("transfer_kind")
+                account = depot_account if tx.get("account_key") == "depot" else cash_account
 
                 try:
-                    if is_transfer and transfer_account is not None and amount_eur:
+                    if is_transfer and transfer_kind == "external" and transfer_account is not None and amount_eur:
                         if _find_transaction_by_financial_id(session, imported_id):
                             duplicates += 1
                             log.debug("Transfert doublon détecté et ignoré (imported_id=%s)", imported_id)
@@ -327,6 +331,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             payee=payee,
                             cleared=cleared,
                             pending=pending,
+                            allow_create_pair=settings.autocreate_transfer,
                         )
                         inserted += 1
                         if linked_existing:
@@ -334,6 +339,30 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                                 "Transfert lié à une transaction existante du compte opposé (imported_id=%s)",
                                 imported_id,
                             )
+                        continue
+
+                    if is_transfer and transfer_kind == "depot" and amount_eur:
+                        if _find_transaction_by_financial_id(session, imported_id):
+                            duplicates += 1
+                            log.debug("Trade-Transfer doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            continue
+
+                        trade_account = cash_account if amount_eur < 0 else depot_account
+                        counterpart_account = depot_account if amount_eur < 0 else cash_account
+                        result_tx, counterpart_tx, linked_existing = _create_or_link_transfer(
+                            session,
+                            date=date,
+                            account=trade_account,
+                            transfer_account=counterpart_account,
+                            amount_eur=amount_eur,
+                            notes=notes,
+                            imported_id=imported_id,
+                            payee=payee,
+                            cleared=cleared,
+                            pending=pending,
+                            allow_create_pair=True,
+                        )
+                        inserted += 1
                         continue
 
                     result_tx = reconcile_transaction(

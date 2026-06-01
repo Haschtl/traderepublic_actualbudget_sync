@@ -104,28 +104,12 @@ def _extract_event_type(tx: Dict[str, Any]) -> str:
     return tx.get("eventType") or raw_event_type or tx.get("type") or ""
 
 
-def _looks_like_transfer(tx: Dict[str, Any], event_type: str, payee: str) -> bool:
-    haystack = " ".join(
-        str(value or "")
-        for value in [
-            event_type,
-            payee,
-            tx.get("subtitle"),
-            tx.get("category"),
-            tx.get("type"),
-        ]
-    ).upper()
-    transfer_markers = (
-        "TRANSFER",
-        "DEPOSIT",
-        "WITHDRAW",
-        "EINZAHL",
-        "AUSZAHL",
-        "SEPA",
-        "CASH_IN",
-        "CASH_OUT",
-    )
-    return any(marker in haystack for marker in transfer_markers)
+def _classify_event(event_type: str) -> tuple[str, str | None]:
+    if event_type in {"BANK_TRANSACTION_INCOMING", "BANK_TRANSACTION_OUTGOING"}:
+        return "cash", "external"
+    if event_type == "TRADING_TRADE_EXECUTED":
+        return "cash", "depot"
+    return "cash", None
 
 
 def _build_memo(tx: Dict[str, Any], event_type: str, status: str) -> str:
@@ -169,6 +153,7 @@ def map_pytr_to_actual(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any
         source_id = _extract_source_id(tx)
         currency = _extract_currency(tx)
         event_type = _extract_event_type(tx)
+        account_key, transfer_kind = _classify_event(event_type)
         pending = status == "PENDING"
         cleared = status == "EXECUTED"
 
@@ -182,6 +167,8 @@ def map_pytr_to_actual(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any
             "event_type": event_type,
             "cleared": cleared,
             "pending": pending,
-            "is_transfer": _looks_like_transfer(tx, event_type, payee),
+            "is_transfer": transfer_kind is not None,
+            "account_key": account_key,
+            "transfer_kind": transfer_kind,
         })
     return out

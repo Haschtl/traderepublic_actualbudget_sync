@@ -21,11 +21,16 @@ class Settings:
     actual_encryption_password: str = os.getenv("ACTUAL_ENCRYPTION_PASSWORD", "")
     actual_budget_id: str = os.getenv("ACTUAL_BUDGET_ID", "")
     actual_account_name: str = os.getenv("ACTUAL_ACCOUNT_NAME", "")
+    actual_cash_account_name: str = os.getenv(
+        "ACTUAL_CASH_ACCOUNT_NAME",
+        os.getenv("ACTUAL_ACCOUNT_NAME", "Trade Republic Cash"),
+    )
+    actual_depot_account_name: str = os.getenv("ACTUAL_DEPOT_ACCOUNT_NAME", "Trade Republic Depot")
     actual_transfer_account_name: str = os.getenv("ACTUAL_TRANSFER_ACCOUNT_NAME", "")
     sync_cron: str = os.getenv("SYNC_CRON", "0 1 * * *")
     basic_auth_username: str = os.getenv("BASIC_AUTH_USERNAME", "")
     basic_auth_password: str = os.getenv("BASIC_AUTH_PASSWORD", "")
-    autocreate_transfer: str = os.getenv("TR_AUTOCREATE_TRANSFER", "false").lower() in ("true", "1", "yes", "on")
+    autocreate_transfer: bool = os.getenv("TR_AUTOCREATE_TRANSFER", "false").lower() in ("true", "1", "yes", "on")
 
 
 settings = Settings()
