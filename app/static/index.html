@@ -216,7 +216,7 @@
 
       .metric-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
         gap: 10px;
         margin-top: 12px;
       }
@@ -387,6 +387,10 @@
               <span>Duplikate</span>
               <strong id="metric-duplicates">0</strong>
             </div>
+            <div class="metric">
+              <span>Transfer-Matches</span>
+              <strong id="metric-transfer-matches">0</strong>
+            </div>
           </div>
         </div>
 
@@ -541,8 +545,29 @@
         lastMappedTransactions = data || []
         writeJson('mapped', lastMappedTransactions)
         updateMetrics({ mapped: lastMappedTransactions.length })
-        setStatus('Mapping erstellt', `${lastMappedTransactions.length} Buchungen im Actual-Format.`, 'success')
+        const preview = await previewImport(lastMappedTransactions)
+        const transferText = preview
+          ? `${preview.matched_existing_counterpart}/${preview.external_transfers} externe Transfers mit bestehender Gegenbuchung gefunden.`
+          : 'Actual-Preview nicht verfügbar.'
+        setStatus('Mapping erstellt', `${lastMappedTransactions.length} Buchungen im Actual-Format. ${transferText}`, 'success')
         return lastMappedTransactions
+      }
+
+      async function previewImport(mappedTransactions) {
+        try {
+          const data = await requestJson('/tr/preview-import', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mappedTransactions)
+          })
+          document.getElementById('metric-transfer-matches').textContent = data.matched_existing_counterpart ?? 0
+          writeJson('import-report', data.report || [])
+          return data
+        } catch (error) {
+          document.getElementById('metric-transfer-matches').textContent = 'n/a'
+          writeJson('import-report', [{ action: 'preview_error', error: error.message }])
+          return null
+        }
       }
 
       async function syncAll() {

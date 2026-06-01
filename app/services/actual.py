@@ -224,6 +224,94 @@ def encrypt_budget() -> Dict[str, Any]:
         }
 
 
+def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
+    """Read-only preview for mapped transactions against Actual state."""
+    external_transfers = [tx for tx in transactions if tx.get("transfer_kind") == "external"]
+    depot_transfers = [tx for tx in transactions if tx.get("transfer_kind") == "depot"]
+
+    if settings.app_mode == "mock":
+        return {
+            "status": "mocked",
+            "total": len(transactions),
+            "external_transfers": len(external_transfers),
+            "matched_existing_counterpart": 0,
+            "unmatched_external_transfers": len(external_transfers),
+            "depot_transfers": len(depot_transfers),
+            "duplicates": 0,
+            "transfer_account_configured": bool(settings.actual_transfer_account_name),
+            "report": [],
+        }
+
+    try:
+        from actual import Actual
+        from actual.queries import get_account
+    except ImportError as e:
+        raise NotImplementedError(
+            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
+        )
+
+    url = settings.actual_url
+    password = settings.actual_password
+    encryption_password = settings.actual_encryption_password
+    budget_id = settings.actual_budget_id
+    transfer_account_name = settings.actual_transfer_account_name
+
+    if not url:
+        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+
+    matched = 0
+    duplicates = 0
+    report = []
+
+    with Actual(
+        base_url=url,
+        password=password or None,
+        file=budget_id or None,
+        encryption_password=encryption_password or None,
+    ) as actual:
+        session = actual.session
+        transfer_account = get_account(session, transfer_account_name) if transfer_account_name else None
+
+        for tx in external_transfers:
+            imported_id = tx.get("source_id")
+            duplicate = _find_transaction_by_financial_id(session, imported_id) is not None
+            if duplicate:
+                duplicates += 1
+
+            matched_counterpart = False
+            if transfer_account is not None and tx.get("date") and tx.get("amount"):
+                date = datetime.date.fromisoformat(tx["date"])
+                amount_eur = (tx.get("amount") or 0) / 100
+                counterpart_amount = -amount_eur if amount_eur > 0 else abs(amount_eur)
+                matched_counterpart = (
+                    _find_matching_transfer_counterpart(session, transfer_account, date, counterpart_amount)
+                    is not None
+                )
+                if matched_counterpart:
+                    matched += 1
+
+            report.append({
+                "source_id": imported_id,
+                "date": tx.get("date"),
+                "payee": tx.get("payee"),
+                "event_type": tx.get("event_type"),
+                "duplicate": duplicate,
+                "matched_existing_counterpart": matched_counterpart,
+            })
+
+    return {
+        "status": "ok",
+        "total": len(transactions),
+        "external_transfers": len(external_transfers),
+        "matched_existing_counterpart": matched,
+        "unmatched_external_transfers": max(0, len(external_transfers) - matched - duplicates),
+        "depot_transfers": len(depot_transfers),
+        "duplicates": duplicates,
+        "transfer_account_configured": bool(transfer_account_name),
+        "report": report,
+    }
+
+
 def push_transactions(transactions: List[Dict]) -> Dict:
     """Pousse les transactions mappées vers Actual Budget.
 

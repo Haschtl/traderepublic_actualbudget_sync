@@ -15,6 +15,7 @@ from typing import Optional
 from app.services.actual import push_transactions as actual_push
 from app.services.actual import list_budget_files as actual_list_files
 from app.services.actual import encrypt_budget as actual_encrypt_budget
+from app.services.actual import preview_import as actual_preview_import
 from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.services.state import mark_sync_failure, mark_sync_success
 from app.core.config import settings
@@ -34,6 +35,22 @@ async def map_preview(transactions: List[PytrTransaction]):
             serialized.append(t.dict())
     mapped = map_pytr_to_actual(serialized)
     return mapped
+
+
+@router.post("/tr/preview-import")
+async def preview_import(transactions: List[ActualTransaction]):
+    serialized = []
+    for t in transactions:
+        if hasattr(t, "model_dump"):
+            serialized.append(t.model_dump())
+        else:
+            serialized.append(t.dict())
+    try:
+        return await asyncio.to_thread(actual_preview_import, serialized)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/tr/fetch")
