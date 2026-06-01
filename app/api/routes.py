@@ -18,6 +18,7 @@ from app.services.actual import encrypt_budget as actual_encrypt_budget
 from app.services.actual import preview_import as actual_preview_import
 from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.services.state import mark_sync_failure, mark_sync_success
+from app.services.trade_republic_csv import parse_trade_republic_csv
 from app.core.config import settings
 
 router = APIRouter()
@@ -186,3 +187,51 @@ async def sync_history(payload: Optional[dict] = None):
     from_date = payload.get("from_date") or None
     to_date = payload.get("to_date") or None
     return await run_history_sync(session_id, from_date=from_date, to_date=to_date)
+
+
+@router.post("/tr/csv/preview")
+async def preview_csv_import(payload: dict):
+    csv_text = payload.get("csv") or ""
+    if not csv_text.strip():
+        raise HTTPException(status_code=400, detail="CSV fehlt.")
+    txs = parse_trade_republic_csv(csv_text)
+    mapped = map_pytr_to_actual(txs)
+    preview = None
+    preview_error = None
+    try:
+        preview = await asyncio.to_thread(actual_preview_import, mapped)
+    except Exception as e:
+        preview_error = str(e)
+    response = {
+        "source": "csv",
+        "count": len(txs),
+        "mapped_count": len(mapped),
+        "transactions": txs,
+        "mapped": mapped,
+        "preview": preview,
+    }
+    if preview_error:
+        response["preview_error"] = preview_error
+    return response
+
+
+@router.post("/tr/csv/sync")
+async def sync_csv_import(payload: dict):
+    csv_text = payload.get("csv") or ""
+    if not csv_text.strip():
+        raise HTTPException(status_code=400, detail="CSV fehlt.")
+    try:
+        txs = parse_trade_republic_csv(csv_text)
+        mapped = map_pytr_to_actual(txs)
+        pushed = await asyncio.to_thread(actual_push, mapped)
+        response = {
+            "source": "csv",
+            "count": len(txs),
+            "mapped_count": len(mapped),
+            "pushed": pushed,
+        }
+        mark_sync_success(response, scheduled=False)
+        return response
+    except Exception as e:
+        mark_sync_failure(str(e), scheduled=False)
+        raise

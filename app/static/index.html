@@ -415,6 +415,19 @@
               <input id="history-to" type="date" />
             </label>
           </div>
+          <div class="field-row">
+            <label>
+              Trade Republic CSV
+              <input id="csv-file" type="file" accept=".csv,text/csv" />
+            </label>
+            <label>
+              CSV-Aktion
+              <span class="toolbar">
+                <button id="btn-csv-preview" class="secondary" type="button">CSV ansehen</button>
+                <button id="btn-csv-sync" class="secondary" type="button">CSV importieren</button>
+              </span>
+            </label>
+          </div>
         </div>
 
         <div class="panel span-12">
@@ -683,6 +696,57 @@
         }
       }
 
+      async function readCsvFile() {
+        const file = document.getElementById('csv-file').files[0]
+        if (!file) throw new Error('Bitte zuerst eine Trade-Republic-CSV auswählen.')
+        return await file.text()
+      }
+
+      async function previewCsv() {
+        const csv = await readCsvFile()
+        setStatus('CSV wird gelesen', 'Trade-Republic-Export wird geparst und gemappt...')
+        const data = await requestJson('/tr/csv/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csv })
+        })
+        lastRawTransactions = data.transactions || []
+        lastMappedTransactions = data.mapped || []
+        writeJson('raw', lastRawTransactions)
+        writeJson('mapped', lastMappedTransactions)
+        writeJson('import-report', data.preview?.report || [{ action: 'preview_unavailable', error: data.preview_error || 'Actual-Preview nicht verfügbar' }])
+        updateMetrics({ fetched: data.count || lastRawTransactions.length, mapped: data.mapped_count || lastMappedTransactions.length })
+        if (data.preview) {
+          document.getElementById('metric-transfer-matches').textContent = data.preview.matched_existing_counterpart ?? 0
+          renderPreview(data.preview)
+        } else {
+          document.getElementById('metric-transfer-matches').textContent = 'n/a'
+          renderPreview(null)
+        }
+        setStatus(
+          'CSV vorbereitet',
+          `${data.count || 0} CSV-Zeilen gelesen, ${data.mapped_count || 0} Buchungen fürs Actual-Format vorbereitet.`,
+          'success'
+        )
+        return data
+      }
+
+      async function syncCsv() {
+        const csv = await readCsvFile()
+        const confirmed = confirm('CSV jetzt nach Actual Budget importieren? Duplikate werden über transaction_id/financial_id erkannt.')
+        if (!confirmed) return null
+        setStatus('CSV-Import läuft', 'CSV wird gemappt und nach Actual Budget übertragen...')
+        const data = await requestJson('/tr/csv/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ csv })
+        })
+        updateMetrics({ fetched: data.count, mapped: data.mapped_count, pushed: data.pushed })
+        setStatus('CSV-Import abgeschlossen', summarizePush(data), 'success')
+        restoreSessionFromServer()
+        return data
+      }
+
       async function syncAll() {
         const fromDate = document.getElementById('history-from').value
         const toDate = document.getElementById('history-to').value
@@ -792,6 +856,14 @@
 
       document.getElementById('btn-sync').addEventListener('click', async () => {
         try { await syncAll() } catch (error) { setStatus('Sync fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-csv-preview').addEventListener('click', async () => {
+        try { await previewCsv() } catch (error) { setStatus('CSV-Preview fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-csv-sync').addEventListener('click', async () => {
+        try { await syncCsv() } catch (error) { setStatus('CSV-Import fehlgeschlagen', error.message, 'error') }
       })
 
       setSessionId(currentSessionId)
