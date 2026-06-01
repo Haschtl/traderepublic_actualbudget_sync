@@ -52,6 +52,38 @@ def _find_matching_transfer_counterpart(session, account, date: datetime.date, a
     ).first()
 
 
+def _serialize_transfer_match(transaction, fallback_account_name: str | None = None) -> Dict[str, Any]:
+    try:
+        from actual.utils.conversions import cents_to_decimal, int_to_date
+    except ImportError:
+        cents_to_decimal = None
+        int_to_date = None
+
+    def relation_name(relation) -> str | None:
+        return getattr(relation, "name", None) or getattr(relation, "transfer_acct", None)
+
+    try:
+        date_value = int_to_date(transaction.date).isoformat() if int_to_date else str(transaction.date)
+    except Exception:
+        date_value = str(getattr(transaction, "date", ""))
+
+    try:
+        amount_value = float(cents_to_decimal(transaction.amount)) if cents_to_decimal else (transaction.amount or 0) / 100
+    except Exception:
+        amount_value = (getattr(transaction, "amount", 0) or 0) / 100
+
+    return {
+        "id": getattr(transaction, "id", None),
+        "date": date_value,
+        "amount": amount_value,
+        "account": relation_name(getattr(transaction, "account", None)) or fallback_account_name,
+        "payee": relation_name(getattr(transaction, "payee", None)) or getattr(transaction, "imported_description", None),
+        "notes": getattr(transaction, "notes", None),
+        "financial_id": getattr(transaction, "financial_id", None),
+        "imported_description": getattr(transaction, "imported_description", None),
+    }
+
+
 def _create_or_link_transfer(
     session,
     date: datetime.date,
@@ -310,16 +342,21 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 duplicates += 1
 
             matched_counterpart = False
+            actual_match = None
             if transfer_account is not None and tx.get("date") and tx.get("amount"):
                 date = datetime.date.fromisoformat(tx["date"])
                 amount_eur = (tx.get("amount") or 0) / 100
                 counterpart_amount = -amount_eur if amount_eur > 0 else abs(amount_eur)
-                matched_counterpart = (
-                    _find_matching_transfer_counterpart(session, transfer_account, date, counterpart_amount)
-                    is not None
+                counterpart = _find_matching_transfer_counterpart(
+                    session,
+                    transfer_account,
+                    date,
+                    counterpart_amount,
                 )
+                matched_counterpart = counterpart is not None
                 if matched_counterpart:
                     matched += 1
+                    actual_match = _serialize_transfer_match(counterpart, transfer_account_name)
 
             if duplicate:
                 planned_action = "duplicate"
@@ -343,6 +380,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 "planned_action": planned_action,
                 "duplicate": duplicate,
                 "matched_existing_counterpart": matched_counterpart,
+                "actual_match": actual_match,
             })
 
         for tx in depot_transfers:

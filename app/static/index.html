@@ -289,6 +289,15 @@
         font-weight: 750;
       }
 
+      tr.transfer-match-row td {
+        background: #ecfdf3;
+        border-bottom-color: #abefc6;
+      }
+
+      tr.transfer-match-row:hover td {
+        background: #d1fadf;
+      }
+
       .summary-list {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -562,6 +571,10 @@
           .replaceAll("'", '&#039;')
       }
 
+      function escapeAttr(value) {
+        return escapeHtml(value).replaceAll('\n', '&#10;')
+      }
+
       function writeJson(id, value) {
         document.getElementById(id).textContent = JSON.stringify(value, null, 2)
       }
@@ -594,19 +607,39 @@
         const rows = (preview.report || []).slice(0, 200).map((item) => {
           const amount = typeof item.amount === 'number' ? (item.amount / 100).toFixed(2) : ''
           const transfer = item.transfer_account ? `<br><span class="muted">→ ${escapeHtml(item.transfer_account)}</span>` : ''
+          const hasActualMatch = Boolean(item.actual_match)
+          const rowClass = hasActualMatch ? ' class="transfer-match-row"' : ''
+          const tooltip = hasActualMatch ? ` title="${escapeAttr(formatActualMatchTooltip(item.actual_match))}"` : ''
+          const action = hasActualMatch
+            ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">Actual-Match</span>`
+            : escapeHtml(item.planned_action || '')
           return `
-            <tr>
+            <tr${rowClass}${tooltip}>
               <td>${escapeHtml(item.date || '')}</td>
               <td>${escapeHtml(item.payee || '')}</td>
               <td><span class="pill">${escapeHtml(item.event_type || 'unknown')}</span></td>
               <td>${escapeHtml(item.account || '')}${transfer}</td>
-              <td>${escapeHtml(item.planned_action || '')}</td>
+              <td>${action}</td>
               <td>${escapeHtml(amount)}</td>
             </tr>
           `
         }).join('')
 
         table.innerHTML = rows || '<tr><td colspan="6" class="muted">Keine importierbaren Buchungen gefunden.</td></tr>'
+      }
+
+      function formatActualMatchTooltip(match) {
+        const amount = typeof match.amount === 'number' ? match.amount.toFixed(2) : ''
+        return [
+          'Match in Actual Budget',
+          match.date ? `Datum: ${match.date}` : null,
+          match.account ? `Account: ${match.account}` : null,
+          match.payee ? `Payee: ${match.payee}` : null,
+          amount ? `Betrag: ${amount}` : null,
+          match.imported_description ? `Import-Text: ${match.imported_description}` : null,
+          match.notes ? `Notes: ${match.notes}` : null,
+          match.financial_id ? `Financial ID: ${match.financial_id}` : null,
+        ].filter(Boolean).join('\n')
       }
 
       function renderSummaryBox(title, values = {}) {
