@@ -59,3 +59,11 @@ def test_encrypt_budget_mock():
     assert r.status_code == 200
     assert r.json() == {'status': 'mocked', 'encrypted': True}
 
+
+def test_reset_tr_import_mock_dry_run():
+    r = client.post('/actual/reset-tr-import', json={'dry_run': True})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload['status'] == 'mocked'
+    assert payload['dry_run'] is True
+    assert payload['matched_for_delete'] == 0

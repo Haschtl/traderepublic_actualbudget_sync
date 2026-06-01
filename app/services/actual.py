@@ -84,6 +84,15 @@ def _serialize_transfer_match(transaction, fallback_account_name: str | None = N
     }
 
 
+def _serialize_transaction_for_reset(transaction, fallback_account_name: str | None = None) -> Dict[str, Any]:
+    serialized = _serialize_transfer_match(transaction, fallback_account_name)
+    serialized.update({
+        "transferred_id": getattr(transaction, "transferred_id", None),
+        "tombstone": getattr(transaction, "tombstone", None),
+    })
+    return serialized
+
+
 def _create_or_link_transfer(
     session,
     date: datetime.date,
@@ -436,6 +445,142 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
         "transfer_account_configured": bool(transfer_account_name),
         "report": report,
     }
+
+
+def reset_imported_transactions(dry_run: bool = True) -> Dict[str, Any]:
+    """Delete imported Trade Republic rows and unlink matched external counterparts.
+
+    Only transactions inside the configured Trade Republic cash/depot accounts are
+    deleted. Transactions in other accounts are kept and merely detached when they
+    point at one of the deleted rows.
+    """
+    if settings.app_mode == "mock":
+        return {
+            "status": "mocked",
+            "dry_run": dry_run,
+            "matched_for_delete": 0,
+            "matched_for_unlink": 0,
+            "deleted": 0,
+            "unlinked": 0,
+            "transactions": [],
+            "counterparts": [],
+        }
+
+    try:
+        from actual import Actual
+        from actual.database import Transactions
+        from actual.queries import get_account
+        from sqlmodel import select
+    except ImportError as e:
+        raise NotImplementedError(
+            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
+        )
+
+    url = settings.actual_url
+    password = settings.actual_password
+    encryption_password = settings.actual_encryption_password
+    budget_id = settings.actual_budget_id
+
+    if not url:
+        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+
+    with Actual(
+        base_url=url,
+        password=password or None,
+        file=budget_id or None,
+        encryption_password=encryption_password or None,
+    ) as actual:
+        session = actual.session
+        configured_names = [
+            name
+            for name in {
+                settings.actual_cash_account_name,
+                settings.actual_depot_account_name,
+            }
+            if name
+        ]
+        accounts = []
+        missing_accounts = []
+        for name in configured_names:
+            account = get_account(session, name)
+            if account is None:
+                missing_accounts.append(name)
+            else:
+                accounts.append(account)
+
+        if not accounts:
+            return {
+                "status": "ok",
+                "dry_run": dry_run,
+                "matched_for_delete": 0,
+                "matched_for_unlink": 0,
+                "deleted": 0,
+                "unlinked": 0,
+                "accounts": [],
+                "missing_accounts": missing_accounts,
+                "transactions": [],
+                "counterparts": [],
+                "warnings": ["Keine konfigurierten Trade-Republic-Accounts in Actual gefunden."],
+            }
+
+        account_ids = {account.id for account in accounts}
+        account_name_by_id = {account.id: account.name for account in accounts}
+        txs = session.exec(
+            select(Transactions)
+            .where(Transactions.acct.in_(account_ids))
+            .where(Transactions.tombstone == 0)
+            .where(Transactions.financial_id.is_not(None))
+            .where(Transactions.is_parent == 0)
+        ).all()
+
+        delete_ids = {tx.id for tx in txs}
+        unique_counterparts = {}
+        for tx in txs:
+            if not tx.transferred_id:
+                continue
+            counterpart = session.get(Transactions, tx.transferred_id)
+            if counterpart is None or counterpart.tombstone:
+                continue
+            if counterpart.id in delete_ids:
+                continue
+            unique_counterparts[counterpart.id] = counterpart
+
+        result = {
+            "status": "ok",
+            "dry_run": dry_run,
+            "matched_for_delete": len(txs),
+            "matched_for_unlink": len(unique_counterparts),
+            "deleted": 0 if dry_run else len(txs),
+            "unlinked": 0 if dry_run else len(unique_counterparts),
+            "accounts": [account.name for account in accounts],
+            "missing_accounts": missing_accounts,
+            "transactions": [
+                _serialize_transaction_for_reset(tx, account_name_by_id.get(tx.acct))
+                for tx in txs
+            ],
+            "counterparts": [
+                _serialize_transaction_for_reset(counterpart)
+                for counterpart in unique_counterparts.values()
+            ],
+            "warnings": [
+                "Externe Gegenbuchungen werden nur entlinkt, nicht gelöscht. "
+                "Payee/Kategorie/Notes, die beim ursprünglichen Match angepasst wurden, "
+                "können nicht automatisch auf den alten Wert zurückgesetzt werden."
+            ],
+        }
+
+        if dry_run:
+            return result
+
+        for counterpart in unique_counterparts.values():
+            counterpart.transferred_id = None
+
+        for tx in txs:
+            tx.transferred_id = None
+            tx.tombstone = 1
+
+        actual.commit()
+        return result
 
 
 def push_transactions(transactions: List[Dict]) -> Dict:

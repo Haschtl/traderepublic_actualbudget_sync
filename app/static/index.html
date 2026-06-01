@@ -424,6 +424,10 @@
             <button id="btn-csv-preview" class="secondary" type="button">CSV-Import</button>
             <button id="btn-sync" class="primary" disabled>Zu Actual pushen</button>
           </div>
+          <div class="toolbar">
+            <button id="btn-reset-preview" class="secondary" type="button">Reset prüfen</button>
+            <button id="btn-reset-run" class="danger" type="button">TR-Import zurücksetzen</button>
+          </div>
           <input id="csv-file" type="file" accept=".csv,text/csv" hidden />
           <div class="field-row">
             <label>
@@ -836,6 +840,49 @@
         return data
       }
 
+      async function resetTradeRepublicImport(dryRun) {
+        if (!dryRun) {
+          const confirmed = confirm(
+            'Importierte Buchungen in den Trade-Republic-Cash/Depot-Accounts löschen und gematchte externe Gegenbuchungen entlinken? Bitte vorher "Reset prüfen" ausführen.'
+          )
+          if (!confirmed) return null
+        }
+        setStatus(
+          dryRun ? 'Reset wird geprüft' : 'Reset läuft',
+          dryRun
+            ? 'Actual wird gelesen; es wird noch nichts geändert.'
+            : 'Importierte TR-Zeilen werden entfernt und externe Transfer-Links gelöst...'
+        )
+        const data = await requestJson('/actual/reset-tr-import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dry_run: dryRun })
+        })
+        writeJson('import-report', {
+          reset: {
+            dry_run: data.dry_run,
+            matched_for_delete: data.matched_for_delete,
+            matched_for_unlink: data.matched_for_unlink,
+            deleted: data.deleted,
+            unlinked: data.unlinked,
+            accounts: data.accounts,
+            missing_accounts: data.missing_accounts,
+            warnings: data.warnings,
+          },
+          transactions: data.transactions || [],
+          counterparts: data.counterparts || [],
+        })
+        const title = dryRun ? 'Reset-Check fertig' : 'Reset abgeschlossen'
+        const verb = dryRun ? 'würden gelöscht' : 'gelöscht'
+        const unlinkVerb = dryRun ? 'würden entlinkt' : 'entlinkt'
+        setStatus(
+          title,
+          `${data.matched_for_delete || data.deleted || 0} TR-Buchungen ${verb}, ${data.matched_for_unlink || data.unlinked || 0} externe Gegenbuchungen ${unlinkVerb}.`,
+          'success'
+        )
+        return data
+      }
+
       function summarizePush(data) {
         const pushed = data.pushed || {}
         const fetchMeta = data.fetch_meta
@@ -899,6 +946,14 @@
 
       document.getElementById('btn-sync').addEventListener('click', async () => {
         try { await pushMapped() } catch (error) { setStatus('Push fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-reset-preview').addEventListener('click', async () => {
+        try { await resetTradeRepublicImport(true) } catch (error) { setStatus('Reset-Check fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-reset-run').addEventListener('click', async () => {
+        try { await resetTradeRepublicImport(false) } catch (error) { setStatus('Reset fehlgeschlagen', error.message, 'error') }
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {

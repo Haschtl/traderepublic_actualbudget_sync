@@ -18,6 +18,7 @@ from app.services.actual import push_transactions as actual_push
 from app.services.actual import list_budget_files as actual_list_files
 from app.services.actual import encrypt_budget as actual_encrypt_budget
 from app.services.actual import preview_import as actual_preview_import
+from app.services.actual import reset_imported_transactions as actual_reset_import
 from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.services.state import mark_sync_failure, mark_sync_success
 from app.services.trade_republic_csv import parse_trade_republic_csv
@@ -182,6 +183,18 @@ async def encrypt_actual_budget():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     return result
+
+
+@router.post("/actual/reset-tr-import")
+async def reset_actual_tr_import(payload: Optional[dict] = None):
+    payload = payload or {}
+    dry_run = bool(payload.get("dry_run", True))
+    try:
+        return await asyncio.to_thread(actual_reset_import, dry_run)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/tr/status")

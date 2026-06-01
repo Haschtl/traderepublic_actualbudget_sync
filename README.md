@@ -22,6 +22,7 @@ It supports both the Trade Republic API via [`pytr`](https://github.com/pytr-org
   - external bank transfers can be matched against an existing Actual account.
 - Transfer matching against `ACTUAL_TRANSFER_ACCOUNT_NAME`.
 - Matched transfers are highlighted in the UI preview; hover shows the matched Actual transaction.
+- Reset helper for deleting imported TR rows and unlinking matched external transfers.
 - Duplicate detection through Actual `financial_id`.
 - Full Trade Republic details are written into Actual notes.
 - Pending/cleared handling.
@@ -85,6 +86,11 @@ Open `http://127.0.0.1:8000`.
 4. Push to Actual
    - `Zu Actual pushen` only pushes the currently loaded/mapped preview.
    - It does not fetch Trade Republic again.
+
+5. Optional reset before reimport
+   - `Reset prüfen` shows which imported TR rows would be removed.
+   - `TR-Import zurücksetzen` tombstones imported rows in the configured TR cash/depot accounts.
+   - Existing Gegenkonto transactions are not deleted; their transfer link is removed so a fresh import can match them again.
 
 ## Environment Variables
 
@@ -165,6 +171,32 @@ If no match exists, the default behavior is to import only the Trade Republic ca
 TR_AUTOCREATE_TRANSFER=true
 ```
 
+## Resetting An Import
+
+If you need to reimport history, use the reset flow before deleting things manually in Actual.
+
+The reset endpoint only deletes imported rows inside:
+
+- `ACTUAL_CASH_ACCOUNT_NAME`
+- `ACTUAL_DEPOT_ACCOUNT_NAME`
+
+Matched transactions in `ACTUAL_TRANSFER_ACCOUNT_NAME` or other external accounts are kept. If they point to a deleted TR row, their `transferred_id` is cleared so the next import can match them again.
+
+Important limitation: when a transaction was matched as a transfer, Actual-side fields such as payee/category/notes may have been adjusted during linking. The reset can unlink the transfer, but it cannot know the old values and therefore cannot restore those fields automatically.
+
+UI buttons:
+
+- `Reset prüfen`: dry-run only.
+- `TR-Import zurücksetzen`: executes the reset after confirmation.
+
+API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/actual/reset-tr-import \
+  -H 'Content-Type: application/json' \
+  -d '{"dry_run": true}'
+```
+
 ## Notes Written To Actual
 
 Each imported transaction memo contains:
@@ -223,6 +255,7 @@ curl -X POST http://127.0.0.1:8000/tr/sync-now
 | `POST` | `/tr/sync-now` | Trigger scheduled sync logic immediately |
 | `GET` | `/actual/files` | List Actual budget files |
 | `POST` | `/actual/encrypt` | Enable/use budget encryption |
+| `POST` | `/actual/reset-tr-import` | Dry-run or execute reset of imported TR rows |
 
 The web UI uses the explicit two-step endpoints: fetch/preview first, then `/tr/push-mapped`.
 
