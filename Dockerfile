@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2 \
     libgtk-3-0 \
     fonts-liberation \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # copy and install requirements
@@ -41,11 +42,13 @@ COPY . /app
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /data \
     && chown -R appuser:appuser /app /data /ms-playwright
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV APP_MODE=production
 
 EXPOSE 8000
 
-USER appuser
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

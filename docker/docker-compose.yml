@@ -21,6 +21,8 @@ services:
       TR_PIN: "1234"
       # Chemin du fichier de cookies persistant (à l'intérieur du conteneur)
       TR_COOKIES_FILE: /data/pytr_cookies.json
+      # Le conteneur chown ce dossier au démarrage puis lance l'app sans root
+      TR_DATA_DIR: /data
 
       # ── Actual Budget ───────────────────────────────────────────────────────
       # URL de votre instance Actual Budget (sans slash final)

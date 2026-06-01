@@ -323,6 +323,7 @@ Future Actual connections use the configured encryption password.
 - Store cookies and state in a persistent private volume.
 - Do not commit `.env`, cookie files, session JSON, or local data directories.
 - The Docker image runs as an unprivileged user.
+- On container startup, `/data` is chowned once and the app then drops to UID/GID `10001`. This keeps Trade Republic cookie/session files writable without running the web app as root.
 - Prefer a reverse proxy with TLS for remote access.
 
 ## Local Development
