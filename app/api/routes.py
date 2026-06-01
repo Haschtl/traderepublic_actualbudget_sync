@@ -19,6 +19,7 @@ from app.services.actual import list_budget_files as actual_list_files
 from app.services.actual import encrypt_budget as actual_encrypt_budget
 from app.services.actual import preview_import as actual_preview_import
 from app.services.actual import reset_imported_transactions as actual_reset_import
+from app.services.actual import adjust_depot_balance as actual_adjust_depot_balance
 from app.services.scheduler import run_history_sync, run_scheduled_sync
 from app.services.state import mark_sync_failure, mark_sync_success
 from app.services.trade_republic_csv import parse_trade_republic_csv
@@ -191,6 +192,22 @@ async def reset_actual_tr_import(payload: Optional[dict] = None):
     dry_run = bool(payload.get("dry_run", True))
     try:
         return await asyncio.to_thread(actual_reset_import, dry_run)
+    except NotImplementedError as e:
+        raise HTTPException(status_code=501, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/actual/depot-adjustment")
+async def adjust_actual_depot(payload: dict):
+    target_value = payload.get("target_value")
+    if target_value in (None, ""):
+        raise HTTPException(status_code=400, detail="target_value fehlt.")
+    date = payload.get("date") or None
+    try:
+        return await asyncio.to_thread(actual_adjust_depot_balance, target_value, date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except NotImplementedError as e:
         raise HTTPException(status_code=501, detail=str(e))
     except Exception as e:

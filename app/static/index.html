@@ -439,6 +439,16 @@
               <input id="history-to" type="date" />
             </label>
           </div>
+          <div class="field-row">
+            <label>
+              Aktueller TR-Depotwert
+              <input id="depot-target-value" type="text" inputmode="decimal" placeholder="z.B. 3000,00" />
+            </label>
+            <label>
+              Depot-Saldo
+              <button id="btn-depot-adjustment" class="secondary" type="button">Depotwert angleichen</button>
+            </label>
+          </div>
         </div>
 
         <div class="panel span-12">
@@ -883,6 +893,39 @@
         return data
       }
 
+      function parseMoneyInput(value) {
+        const raw = String(value || '').trim()
+        const normalized = raw.includes(',')
+          ? raw.replace(/\./g, '').replace(',', '.')
+          : raw
+        if (!normalized) throw new Error('Bitte den aktuellen TR-Depotwert eingeben.')
+        const parsed = Number(normalized)
+        if (!Number.isFinite(parsed)) throw new Error('Der Depotwert ist keine gültige Zahl.')
+        return parsed.toFixed(2)
+      }
+
+      async function adjustDepotBalance() {
+        const targetValue = parseMoneyInput(document.getElementById('depot-target-value').value)
+        const confirmed = confirm(`Depot-Saldo in Actual per Korrekturbuchung auf ${targetValue} EUR angleichen?`)
+        if (!confirmed) return null
+        setStatus('Depotwert wird angeglichen', 'Actual-Depot-Saldo wird gelesen und nur das Delta als Korrekturbuchung geschrieben...')
+        const data = await requestJson('/actual/depot-adjustment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_value: targetValue })
+        })
+        writeJson('import-report', data)
+        const delta = typeof data.delta === 'number' ? data.delta.toFixed(2) : data.delta
+        const since = data.last_valuation_date
+          ? ` seit letzter Bewertung am ${data.last_valuation_date}`
+          : ' ohne vorherige Bewertung'
+        const body = data.inserted
+          ? `Korrekturbuchung über ${delta} EUR in ${data.account} erstellt${since}.`
+          : `${data.account} war bereits auf dem Zielwert; keine Buchung erstellt.`
+        setStatus('Depotwert angeglichen', body, 'success')
+        return data
+      }
+
       function summarizePush(data) {
         const pushed = data.pushed || {}
         const fetchMeta = data.fetch_meta
@@ -954,6 +997,10 @@
 
       document.getElementById('btn-reset-run').addEventListener('click', async () => {
         try { await resetTradeRepublicImport(false) } catch (error) { setStatus('Reset fehlgeschlagen', error.message, 'error') }
+      })
+
+      document.getElementById('btn-depot-adjustment').addEventListener('click', async () => {
+        try { await adjustDepotBalance() } catch (error) { setStatus('Depot-Abgleich fehlgeschlagen', error.message, 'error') }
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {

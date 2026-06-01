@@ -67,3 +67,17 @@ def test_reset_tr_import_mock_dry_run():
     assert payload['status'] == 'mocked'
     assert payload['dry_run'] is True
     assert payload['matched_for_delete'] == 0
+
+
+def test_depot_adjustment_mock():
+    r = client.post('/actual/depot-adjustment', json={'target_value': '3000.00'})
+    assert r.status_code == 200
+    payload = r.json()
+    assert payload['status'] == 'mocked'
+    assert payload['target_balance'] == 3000.0
+    assert payload['inserted'] is True
+
+
+def test_depot_adjustment_requires_target_value():
+    r = client.post('/actual/depot-adjustment', json={})
+    assert r.status_code == 400

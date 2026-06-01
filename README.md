@@ -23,6 +23,7 @@ It supports both the Trade Republic API via [`pytr`](https://github.com/pytr-org
 - Transfer matching against `ACTUAL_TRANSFER_ACCOUNT_NAME`.
 - Matched transfers are highlighted in the UI preview; hover shows the matched Actual transaction.
 - Reset helper for deleting imported TR rows and unlinking matched external transfers.
+- Explicit depot valuation adjustment to align the Actual depot balance with the current Trade Republic market value.
 - Duplicate detection through Actual `financial_id`.
 - Full Trade Republic details are written into Actual notes.
 - Pending/cleared handling.
@@ -91,6 +92,11 @@ Open `http://127.0.0.1:8000`.
    - `Reset prüfen` shows which imported TR rows would be removed.
    - `TR-Import zurücksetzen` tombstones imported rows in the configured TR cash/depot accounts.
    - Existing Gegenkonto transactions are not deleted; their transfer link is removed so a fresh import can match them again.
+
+6. Optional depot valuation adjustment
+   - Enter the current Trade Republic depot value.
+   - Click `Depotwert angleichen`.
+   - The app creates one explicit `TR Market valuation adjustment` transaction in the depot account for the delta.
 
 ## Environment Variables
 
@@ -197,6 +203,35 @@ curl -X POST http://127.0.0.1:8000/actual/reset-tr-import \
   -d '{"dry_run": true}'
 ```
 
+## Depot Valuation Adjustment
+
+Trade Republic shows the depot as current market value. Actual Budget does not automatically know unrealized gains/losses from security prices, so the imported depot account is a cashflow-style ledger by default.
+
+To make Actual's depot balance match the current Trade Republic value, use the separate `Depotwert angleichen` UI action. It does not run during the normal import push.
+
+The endpoint calculates:
+
+```text
+delta = target Trade Republic depot value - current Actual depot balance
+```
+
+If the delta is non-zero, it creates one cleared transaction in `ACTUAL_DEPOT_ACCOUNT_NAME`:
+
+```text
+Payee: TR Depotwert-Anpassung seit letzter Bewertung
+Notes: current balance, target value, delta, previous valuation date, and explanation
+```
+
+The previous valuation date is derived from the latest existing depot adjustment transaction. Older adjustment rows named `TR Market valuation adjustment` are recognized as well, so the label migration stays compatible.
+
+API:
+
+```bash
+curl -X POST http://127.0.0.1:8000/actual/depot-adjustment \
+  -H 'Content-Type: application/json' \
+  -d '{"target_value": "3000.00"}'
+```
+
 ## Notes Written To Actual
 
 Each imported transaction memo contains:
@@ -256,6 +291,7 @@ curl -X POST http://127.0.0.1:8000/tr/sync-now
 | `GET` | `/actual/files` | List Actual budget files |
 | `POST` | `/actual/encrypt` | Enable/use budget encryption |
 | `POST` | `/actual/reset-tr-import` | Dry-run or execute reset of imported TR rows |
+| `POST` | `/actual/depot-adjustment` | Create a depot valuation adjustment transaction |
 
 The web UI uses the explicit two-step endpoints: fetch/preview first, then `/tr/push-mapped`.
 

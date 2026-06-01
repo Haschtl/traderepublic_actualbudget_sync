@@ -7,6 +7,9 @@ from app.core.config import settings
 
 log = logging.getLogger(__name__)
 
+DEPOT_VALUATION_PAYEE = "TR Depotwert-Anpassung seit letzter Bewertung"
+DEPOT_VALUATION_IMPORT_PREFIX = "tr-depot-valuation-adjustment:"
+
 
 def _is_truthy(value: Any) -> bool:
     return str(value).lower() in {"1", "true", "yes", "on"}
@@ -580,6 +583,140 @@ def reset_imported_transactions(dry_run: bool = True) -> Dict[str, Any]:
             tx.tombstone = 1
 
         actual.commit()
+        return result
+
+
+def _find_last_depot_valuation(session, depot_account):
+    try:
+        from actual.database import Payees, Transactions
+        from sqlmodel import select
+    except ImportError:
+        return None
+
+    return session.exec(
+        select(Transactions)
+        .outerjoin(Payees, Transactions.payee_id == Payees.id)
+        .where(Transactions.acct == depot_account.id)
+        .where(Transactions.tombstone == 0)
+        .where(Transactions.is_parent == 0)
+        .where(
+            (Transactions.financial_id.startswith(DEPOT_VALUATION_IMPORT_PREFIX))
+            | (Payees.name == DEPOT_VALUATION_PAYEE)
+            | (Payees.name == "TR Market valuation adjustment")
+        )
+        .order_by(Transactions.date.desc(), Transactions.sort_order.desc())
+    ).first()
+
+
+def _valuation_date_or_none(transaction) -> str | None:
+    if transaction is None:
+        return None
+    try:
+        from actual.utils.conversions import int_to_date
+        return int_to_date(transaction.date).isoformat()
+    except Exception:
+        return str(getattr(transaction, "date", "")) or None
+
+
+def adjust_depot_balance(target_value_eur: float | int | str, date: str | None = None) -> Dict[str, Any]:
+    """Create one explicit depot valuation adjustment transaction."""
+    target = Decimal(str(target_value_eur))
+    adjustment_date = datetime.date.fromisoformat(date) if date else datetime.date.today()
+
+    if settings.app_mode == "mock":
+        return {
+            "status": "mocked",
+            "account": settings.actual_depot_account_name,
+            "date": adjustment_date.isoformat(),
+            "last_valuation_date": None,
+            "current_balance": 0.0,
+            "target_balance": float(target),
+            "delta": float(target),
+            "inserted": True,
+        }
+
+    try:
+        from actual import Actual
+        from actual.database import Transactions
+        from actual.queries import create_transaction, get_or_create_account
+        from actual.utils.conversions import cents_to_decimal, decimal_to_cents
+        from sqlalchemy import func
+        from sqlmodel import select
+    except ImportError as e:
+        raise NotImplementedError(
+            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
+        )
+
+    url = settings.actual_url
+    password = settings.actual_password
+    encryption_password = settings.actual_encryption_password
+    budget_id = settings.actual_budget_id
+    depot_account_name = settings.actual_depot_account_name
+
+    if not url:
+        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+    if not depot_account_name:
+        raise NotImplementedError("ACTUAL_DEPOT_ACCOUNT_NAME non configuré. Ajoutez-le à votre .env.")
+
+    with Actual(
+        base_url=url,
+        password=password or None,
+        file=budget_id or None,
+        encryption_password=encryption_password or None,
+    ) as actual:
+        session = actual.session
+        depot_account = get_or_create_account(session, depot_account_name)
+        current_cents = session.exec(
+            select(func.coalesce(func.sum(Transactions.amount), 0))
+            .where(Transactions.acct == depot_account.id)
+            .where(Transactions.tombstone == 0)
+            .where(Transactions.is_parent == 0)
+        ).one()
+        last_valuation = _find_last_depot_valuation(session, depot_account)
+        last_valuation_date = _valuation_date_or_none(last_valuation)
+        target_cents = decimal_to_cents(target)
+        delta_cents = target_cents - int(current_cents or 0)
+        current = cents_to_decimal(current_cents)
+        delta = cents_to_decimal(delta_cents)
+
+        result = {
+            "status": "ok",
+            "account": depot_account.name,
+            "date": adjustment_date.isoformat(),
+            "last_valuation_date": last_valuation_date,
+            "current_balance": float(current),
+            "target_balance": float(cents_to_decimal(target_cents)),
+            "delta": float(delta),
+            "inserted": False,
+        }
+
+        if delta_cents == 0:
+            return result
+
+        notes = (
+            "Trade Republic Depotwert-Anpassung\n"
+            f"Actual balance before adjustment: {current}\n"
+            f"Target Trade Republic depot value: {cents_to_decimal(target_cents)}\n"
+            f"Adjustment delta: {delta}\n"
+            f"Last depot valuation: {last_valuation_date or 'none'}\n"
+            "Reason: Kursgewinn/-verlust seit letzter Depotbewertung oder sonstige Bewertungsdifferenz.\n"
+            "This is an explicit market-value correction, not a Trade Republic cashflow."
+        )
+        tx = create_transaction(
+            session,
+            date=adjustment_date,
+            account=depot_account,
+            payee=DEPOT_VALUATION_PAYEE,
+            notes=notes,
+            amount=delta,
+            imported_id=f"{DEPOT_VALUATION_IMPORT_PREFIX}{datetime.datetime.utcnow().isoformat()}",
+            cleared=True,
+            imported_payee=DEPOT_VALUATION_PAYEE,
+        )
+        tx.pending = 0
+        actual.commit()
+        result["inserted"] = True
+        result["transaction_id"] = tx.id
         return result
 
 
