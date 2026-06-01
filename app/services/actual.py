@@ -35,13 +35,15 @@ def _find_matching_transfer_counterpart(session, account, date: datetime.date, a
         return None
 
     target_amount = decimal_to_cents(Decimal(str(amount_eur)))
-    start = date_to_int(date - datetime.timedelta(days=3))
-    end = date_to_int(date + datetime.timedelta(days=3))
+    tolerance = max(0, settings.transfer_match_tolerance_cents)
+    start = date_to_int(date - datetime.timedelta(days=max(0, settings.transfer_match_days)))
+    end = date_to_int(date + datetime.timedelta(days=max(0, settings.transfer_match_days)))
 
     return session.exec(
         select(Transactions)
         .where(Transactions.acct == account.id)
-        .where(Transactions.amount == target_amount)
+        .where(Transactions.amount >= target_amount - tolerance)
+        .where(Transactions.amount <= target_amount + tolerance)
         .where(Transactions.date >= start)
         .where(Transactions.date <= end)
         .where(Transactions.transferred_id.is_(None))
@@ -236,10 +238,23 @@ def push_transactions(transactions: List[Dict]) -> Dict:
         ACTUAL_ACCOUNT_NAME Nom du compte dans le budget (ex : "Trade Republic")
     """
     if settings.app_mode == "mock":
-        return {"status": "mocked", "accepted": len(transactions)}
+        return {
+            "status": "mocked",
+            "accepted": len(transactions),
+            "report": [
+                {
+                    "source_id": tx.get("source_id"),
+                    "date": tx.get("date"),
+                    "payee": tx.get("payee"),
+                    "event_type": tx.get("event_type"),
+                    "action": "mocked",
+                }
+                for tx in transactions
+            ],
+        }
 
     if not transactions:
-        return {"status": "ok", "inserted": 0, "skipped": 0}
+        return {"status": "ok", "inserted": 0, "skipped": 0, "report": []}
 
     try:
         from actual import Actual
@@ -269,6 +284,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     skipped = 0
     duplicates = 0
     errors = []
+    report = []
 
     try:
         with Actual(
@@ -292,6 +308,12 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                 if not date_str:
                     log.warning("Transaction sans date ignorée: %s", tx)
                     skipped += 1
+                    report.append({
+                        "source_id": tx.get("source_id"),
+                        "payee": tx.get("payee"),
+                        "action": "skipped",
+                        "reason": "missing date",
+                    })
                     continue
 
                 try:
@@ -299,6 +321,13 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                 except ValueError:
                     log.warning("Date invalide '%s', transaction ignorée", date_str)
                     skipped += 1
+                    report.append({
+                        "source_id": tx.get("source_id"),
+                        "date": date_str,
+                        "payee": tx.get("payee"),
+                        "action": "skipped",
+                        "reason": "invalid date",
+                    })
                     continue
 
                 payee = tx.get("payee") or "(unknown)"
@@ -318,6 +347,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         if _find_transaction_by_financial_id(session, imported_id):
                             duplicates += 1
                             log.debug("Transfert doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            report.append({
+                                "source_id": imported_id,
+                                "date": date_str,
+                                "payee": payee,
+                                "event_type": tx.get("event_type"),
+                                "transfer_kind": transfer_kind,
+                                "action": "duplicate",
+                            })
                             continue
 
                         result_tx, counterpart_tx, linked_existing = _create_or_link_transfer(
@@ -334,6 +371,20 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             allow_create_pair=settings.autocreate_transfer,
                         )
                         inserted += 1
+                        action = "linked_transfer" if linked_existing else (
+                            "created_transfer" if counterpart_tx is not None else "imported_without_counterpart"
+                        )
+                        report.append({
+                            "source_id": imported_id,
+                            "date": date_str,
+                            "payee": payee,
+                            "event_type": tx.get("event_type"),
+                            "account": account.name,
+                            "transfer_account": transfer_account.name,
+                            "transfer_kind": transfer_kind,
+                            "amount": amount_eur,
+                            "action": action,
+                        })
                         if linked_existing:
                             log.info(
                                 "Transfert lié à une transaction existante du compte opposé (imported_id=%s)",
@@ -345,6 +396,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         if _find_transaction_by_financial_id(session, imported_id):
                             duplicates += 1
                             log.debug("Trade-Transfer doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            report.append({
+                                "source_id": imported_id,
+                                "date": date_str,
+                                "payee": payee,
+                                "event_type": tx.get("event_type"),
+                                "transfer_kind": transfer_kind,
+                                "action": "duplicate",
+                            })
                             continue
 
                         trade_account = cash_account if amount_eur < 0 else depot_account
@@ -363,6 +422,17 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             allow_create_pair=True,
                         )
                         inserted += 1
+                        report.append({
+                            "source_id": imported_id,
+                            "date": date_str,
+                            "payee": payee,
+                            "event_type": tx.get("event_type"),
+                            "account": trade_account.name,
+                            "transfer_account": counterpart_account.name,
+                            "transfer_kind": transfer_kind,
+                            "amount": amount_eur,
+                            "action": "created_transfer",
+                        })
                         continue
 
                     result_tx = reconcile_transaction(
@@ -386,13 +456,39 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                     # Sinon, c'était un match existant (doublon).
                     if result_tx in session.new:
                         inserted += 1
+                        report.append({
+                            "source_id": imported_id,
+                            "date": date_str,
+                            "payee": payee,
+                            "event_type": tx.get("event_type"),
+                            "account": account.name,
+                            "amount": amount_eur,
+                            "action": "inserted",
+                        })
                     else:
                         duplicates += 1
                         log.debug("Doublon détecté et ignoré (imported_id=%s)", imported_id)
+                        report.append({
+                            "source_id": imported_id,
+                            "date": date_str,
+                            "payee": payee,
+                            "event_type": tx.get("event_type"),
+                            "account": account.name,
+                            "amount": amount_eur,
+                            "action": "duplicate",
+                        })
 
                 except Exception as e:
                     log.error("Erreur lors du reconcile de la transaction %s: %s", imported_id, e)
                     errors.append({"source_id": imported_id, "error": str(e)})
+                    report.append({
+                        "source_id": imported_id,
+                        "date": date_str,
+                        "payee": payee,
+                        "event_type": tx.get("event_type"),
+                        "action": "error",
+                        "error": str(e),
+                    })
                     skipped += 1
 
             actual.commit()
@@ -420,7 +516,13 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             "%s Erreur originale: %s" % (hint, e)
         )
 
-    result: Dict = {"status": "ok", "inserted": inserted, "skipped": skipped, "duplicates": duplicates}
+    result: Dict = {
+        "status": "ok",
+        "inserted": inserted,
+        "skipped": skipped,
+        "duplicates": duplicates,
+        "report": report,
+    }
     if errors:
         result["errors"] = errors
     return result

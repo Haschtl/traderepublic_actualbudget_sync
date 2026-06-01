@@ -314,6 +314,8 @@
         <div class="panel session-card">
           <div class="session-label">Trade Republic Session</div>
           <div id="session-info" class="session-value">Keine Session aktiv</div>
+          <div id="session-validity" class="session-label" style="margin-top: 6px;">Status unbekannt</div>
+          <div id="last-sync-info" class="session-label" style="margin-top: 6px;">Noch kein Sync bekannt</div>
           <button id="btn-clear-session" class="secondary" style="margin-top: 10px;">Session vergessen</button>
         </div>
       </header>
@@ -401,6 +403,10 @@
             <summary>Letzte API-Antwort</summary>
             <pre id="last-response">{}</pre>
           </details>
+          <details open>
+            <summary>Import-Report</summary>
+            <pre id="import-report">[]</pre>
+          </details>
         </div>
       </section>
     </main>
@@ -431,6 +437,7 @@
           const data = await res.json()
           const sessions = data.sessions || {}
           const preferred = currentSessionId && sessions[currentSessionId] ? currentSessionId : data.current_session_id
+          renderServerStatus(data)
           if (preferred) {
             setSessionId(preferred)
             const status = sessions[preferred]?.status || 'unbekannt'
@@ -439,6 +446,25 @@
         } catch (error) {
           // Best-effort restore only. Keep the UI usable if status is protected or unavailable.
         }
+      }
+
+      function renderServerStatus(data) {
+        const validity = data.session_validity || 'unknown'
+        const validityText = {
+          valid: 'Session gültig',
+          expired: 'Session abgelaufen, neu verbinden nötig',
+          mock: 'Mock-Session aktiv',
+          none: 'Keine Backend-Session',
+          unknown: 'Sessionstatus unbekannt'
+        }[validity] || `Sessionstatus: ${validity}`
+        document.getElementById('session-validity').textContent = validityText
+
+        const state = data.sync_state || {}
+        const last = state.last_successful_sync_at || state.last_sync_at
+        const error = state.last_sync_error
+        document.getElementById('last-sync-info').textContent = error
+          ? `Letzter Sync fehlgeschlagen: ${error}`
+          : (last ? `Letzter erfolgreicher Sync: ${last}` : 'Noch kein Sync bekannt')
       }
 
       function setStatus(title, body = '', type = 'info') {
@@ -466,6 +492,7 @@
         if (pushed) {
           document.getElementById('metric-inserted').textContent = pushed.inserted ?? pushed.accepted ?? 0
           document.getElementById('metric-duplicates').textContent = pushed.duplicates ?? 0
+          writeJson('import-report', pushed.report || [])
         }
       }
 
@@ -535,6 +562,7 @@
           })
           updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
           setStatus('Sync abgeschlossen', summarizePush(data), 'success')
+          restoreSessionFromServer()
           return data
         }
 
@@ -554,6 +582,7 @@
         })
         updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
         setStatus('Historien-Sync abgeschlossen', summarizePush(data), 'success')
+        restoreSessionFromServer()
         return data
       }
 

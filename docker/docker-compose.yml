@@ -39,6 +39,9 @@ services:
       ACTUAL_TRANSFER_ACCOUNT_NAME: ""
       # Optional : crée une contre-écriture externe si aucun match n'existe
       TR_AUTOCREATE_TRANSFER: "false"
+      # Matching des transferts existants dans ACTUAL_TRANSFER_ACCOUNT_NAME
+      TR_TRANSFER_MATCH_DAYS: "3"
+      TR_TRANSFER_MATCH_TOLERANCE_CENTS: "0"
 
     volumes:
       # Persistance des cookies Trade Republic entre les redémarrages

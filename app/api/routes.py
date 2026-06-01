@@ -16,6 +16,7 @@ from app.services.actual import push_transactions as actual_push
 from app.services.actual import list_budget_files as actual_list_files
 from app.services.actual import encrypt_budget as actual_encrypt_budget
 from app.services.scheduler import run_history_sync, run_scheduled_sync
+from app.services.state import mark_sync_failure, mark_sync_success
 from app.core.config import settings
 
 router = APIRouter()
@@ -142,10 +143,16 @@ async def sync_to_actual(payload: Optional[dict] = None):
     Retourne un résumé de l'opération.
     """
     session_id = (payload or {}).get("session_id") or None
-    txs = await asyncio.to_thread(tr_fetch, session_id)
-    mapped = map_pytr_to_actual(txs)
-    result = await asyncio.to_thread(actual_push, mapped)
-    return {"mapped_count": len(mapped), "pushed": result}
+    try:
+        txs = await asyncio.to_thread(tr_fetch, session_id)
+        mapped = map_pytr_to_actual(txs)
+        result = await asyncio.to_thread(actual_push, mapped)
+        response = {"mapped_count": len(mapped), "pushed": result}
+        mark_sync_success(response, scheduled=False)
+        return response
+    except Exception as e:
+        mark_sync_failure(str(e), scheduled=False)
+        raise
 
 
 @router.post("/tr/sync-now")

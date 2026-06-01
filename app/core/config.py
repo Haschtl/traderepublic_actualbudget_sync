@@ -31,6 +31,8 @@ class Settings:
     basic_auth_username: str = os.getenv("BASIC_AUTH_USERNAME", "")
     basic_auth_password: str = os.getenv("BASIC_AUTH_PASSWORD", "")
     autocreate_transfer: bool = os.getenv("TR_AUTOCREATE_TRANSFER", "false").lower() in ("true", "1", "yes", "on")
+    transfer_match_days: int = int(os.getenv("TR_TRANSFER_MATCH_DAYS", "3"))
+    transfer_match_tolerance_cents: int = int(os.getenv("TR_TRANSFER_MATCH_TOLERANCE_CENTS", "0"))
 
 
 settings = Settings()

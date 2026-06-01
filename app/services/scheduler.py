@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from app.core.config import settings
 from app.mapping.mapper import map_pytr_to_actual
 from app.services.actual import push_transactions
+from app.services.state import load_state, mark_sync_failure, mark_sync_success
 from app.services.trade_republic import fetch_all_transactions, fetch_transactions
 
 log = logging.getLogger(__name__)
@@ -94,7 +95,10 @@ def parse_cron(expr: str) -> CronSchedule:
 
 
 async def run_scheduled_sync() -> dict:
-    return await _run_sync(fetch_transactions)
+    state = load_state()
+    from_date = (state.get("last_successful_sync_at") or "")[:10] or None
+    fetcher = (lambda: fetch_all_transactions(from_date=from_date)) if from_date else fetch_transactions
+    return await _run_sync(fetcher, scheduled=True)
 
 
 async def run_history_sync(
@@ -102,21 +106,29 @@ async def run_history_sync(
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> dict:
-    return await _run_sync(lambda: fetch_all_transactions(session_id, from_date=from_date, to_date=to_date))
+    return await _run_sync(
+        lambda: fetch_all_transactions(session_id, from_date=from_date, to_date=to_date),
+        scheduled=False,
+    )
 
 
-async def _run_sync(fetcher) -> dict:
+async def _run_sync(fetcher, *, scheduled: bool = False) -> dict:
     if _sync_lock.locked():
         log.warning("Scheduled sync skipped because another sync is still running")
         return {"status": "skipped", "reason": "sync already running"}
 
     async with _sync_lock:
-        txs = await asyncio.to_thread(fetcher)
-        mapped = map_pytr_to_actual(txs)
-        pushed = await asyncio.to_thread(push_transactions, mapped)
-        result = {"mapped_count": len(mapped), "pushed": pushed}
-        log.info("Sync completed: %s", result)
-        return result
+        try:
+            txs = await asyncio.to_thread(fetcher)
+            mapped = map_pytr_to_actual(txs)
+            pushed = await asyncio.to_thread(push_transactions, mapped)
+            result = {"mapped_count": len(mapped), "pushed": pushed}
+            mark_sync_success(result, scheduled=scheduled)
+            log.info("Sync completed: %s", result)
+            return result
+        except Exception as exc:
+            mark_sync_failure(str(exc), scheduled=scheduled)
+            raise
 
 
 async def scheduler_loop(cron_expr: str | None = None) -> None:

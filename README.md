@@ -66,6 +66,8 @@ The web interface is available at **http://your-server:8000**.
 | ACTUAL_DEPOT_ACCOUNT_NAME | ✅ | Depot account name |
 | ACTUAL_TRANSFER_ACCOUNT_NAME | | Optional transfer account |
 | TR_AUTOCREATE_TRANSFER | | Automatically create transfer counterparts |
+| TR_TRANSFER_MATCH_DAYS | | Date window for matching existing transfer counterparts |
+| TR_TRANSFER_MATCH_TOLERANCE_CENTS | | Amount tolerance in cents for transfer matching |
 
 ---
 
@@ -144,13 +146,15 @@ Actual notes contain the TR event type, status, and raw Trade Republic transacti
 - `INTEREST_PAYOUT`, `SSP_CORPORATE_ACTION_CASH`, `CARD_TRANSACTION`: regular cash transaction.
 - All other event types: imported as cash transactions with raw Trade Republic details in notes.
 
-For external bank transfers, the importer first searches for an existing unmatched transaction in `ACTUAL_TRANSFER_ACCOUNT_NAME` with the opposite amount and a date within ±3 days. If found, the transactions are linked as a transfer. Otherwise, no counterpart transaction is created by default.
+For external bank transfers, the importer first searches for an existing unmatched transaction in `ACTUAL_TRANSFER_ACCOUNT_NAME` with the opposite amount and a configurable date/tolerance window (`TR_TRANSFER_MATCH_DAYS`, `TR_TRANSFER_MATCH_TOLERANCE_CENTS`). If found, the transactions are linked as a transfer. Otherwise, no counterpart transaction is created by default.
 
 Enable automatic creation with:
 
 ```env
 TR_AUTOCREATE_TRANSFER=true
 ```
+
+For `TRADING_TRADE_EXECUTED`, the importer tries to fetch `timelineDetailV2` and stores the detail payload in the Actual notes together with the raw transaction.
 
 ### Automatic Synchronization
 
@@ -161,6 +165,8 @@ Default:
 ```env
 SYNC_CRON=0 1 * * *
 ```
+
+The scheduled sync stores its last successful run next to `TR_COOKIES_FILE` and imports from that date on the next scheduled run. Manual history import remains controlled by the date range in the UI.
 
 Disable:
 

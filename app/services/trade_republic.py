@@ -1,5 +1,6 @@
 from typing import List, Dict
 from app.core.config import settings
+from app.services.state import load_state
 import uuid
 import json
 import logging
@@ -331,7 +332,7 @@ def fetch_transactions(session_id: str | None = None) -> List[Dict]:
             items = []
 
         log.info("fetch_transactions: %d transaction(s) récupérée(s)", len(items))
-        return items
+        return _enrich_trade_details(api, items)
 
     except Exception as e:
         raise NotImplementedError(
@@ -357,6 +358,22 @@ def _transaction_date(item: Dict) -> date | None:
             return date.fromisoformat(str(raw_value)[:10])
         except Exception:
             return None
+
+
+def _enrich_trade_details(api, items: List[Dict]) -> List[Dict]:
+    for item in items:
+        if item.get("eventType") != "TRADING_TRADE_EXECUTED":
+            continue
+        item_id = item.get("id")
+        if not item_id:
+            continue
+        try:
+            _reset_api_async_state(api)
+            item["timelineDetailV2"] = api.run_blocking(api.timeline_detail_v2(item_id), timeout=30)
+        except Exception as exc:
+            item["timelineDetailV2_error"] = str(exc)
+            log.warning("timelineDetailV2 failed for %s: %s", item_id, exc)
+    return items
 
 
 def fetch_all_transactions(
@@ -415,7 +432,7 @@ def fetch_all_transactions(
                 log.warning("fetch_all_transactions: format de réponse inattendu page %s: %s", page, response)
                 break
 
-            page_items = response.get("items") or []
+            page_items = _enrich_trade_details(api, response.get("items") or [])
             log.info("fetch_all_transactions: page %s reçue avec %d transaction(s)", page, len(page_items))
 
             page_dates = []
@@ -597,9 +614,24 @@ def complete_login(code: str, session_id: str | None = None) -> Dict:
 def get_login_status() -> Dict:
     _load_sessions()
     sid, _cookies_file = _find_connected_session()
+    validity = "none"
+    if sid:
+        validity = "mock" if settings.app_mode == "mock" else "unknown"
+        if settings.app_mode != "mock":
+            try:
+                session = SESSIONS.get(sid, {})
+                api = _get_api_client(sid)
+                if api is None:
+                    api = _build_api_client(session.get("cookies_file") or _cookies_file_for_session(sid))
+                    _store_api_client(sid, api)
+                validity = "valid" if api.resume_websession() else "expired"
+            except Exception:
+                validity = "expired"
     return {
         "current_session_id": sid,
+        "session_validity": validity,
         "session_store": str(_sessions_path()),
+        "sync_state": load_state(),
         "sessions": SESSIONS,
     }
 
