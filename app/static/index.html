@@ -268,6 +268,55 @@
         font-size: 12px;
       }
 
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid var(--line);
+        padding: 9px 8px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 750;
+      }
+
+      .summary-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .summary-box {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: #ffffff;
+      }
+
+      .summary-box ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      .pill {
+        display: inline-block;
+        border-radius: 999px;
+        padding: 2px 8px;
+        background: var(--soft-blue);
+        color: var(--primary-dark);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
       .muted {
         color: var(--muted);
       }
@@ -395,6 +444,27 @@
         </div>
 
         <div class="span-12">
+          <div class="panel" style="margin-bottom: 10px;">
+            <h2>Import-Plan</h2>
+            <div id="preview-summary" class="summary-list"></div>
+            <div style="overflow:auto; margin-top: 12px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Datum</th>
+                    <th>Payee</th>
+                    <th>EventType</th>
+                    <th>Account</th>
+                    <th>Aktion</th>
+                    <th>Betrag</th>
+                  </tr>
+                </thead>
+                <tbody id="preview-table">
+                  <tr><td colspan="6" class="muted">Noch kein Mapping erstellt.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
           <details>
             <summary>Trade Republic Raw-Daten</summary>
             <pre id="raw">[]</pre>
@@ -500,6 +570,47 @@
         }
       }
 
+      function renderPreview(preview) {
+        const summary = document.getElementById('preview-summary')
+        const table = document.getElementById('preview-table')
+        if (!preview) {
+          summary.innerHTML = ''
+          table.innerHTML = '<tr><td colspan="6" class="muted">Preview nicht verfügbar.</td></tr>'
+          return
+        }
+
+        summary.innerHTML = [
+          renderSummaryBox('Nach Account', preview.by_account),
+          renderSummaryBox('Nach EventType', preview.by_event_type),
+          renderSummaryBox('Geplante Aktionen', preview.actions),
+        ].join('')
+
+        const rows = (preview.report || []).slice(0, 200).map((item) => {
+          const amount = typeof item.amount === 'number' ? (item.amount / 100).toFixed(2) : ''
+          const transfer = item.transfer_account ? `<br><span class="muted">→ ${escapeHtml(item.transfer_account)}</span>` : ''
+          return `
+            <tr>
+              <td>${escapeHtml(item.date || '')}</td>
+              <td>${escapeHtml(item.payee || '')}</td>
+              <td><span class="pill">${escapeHtml(item.event_type || 'unknown')}</span></td>
+              <td>${escapeHtml(item.account || '')}${transfer}</td>
+              <td>${escapeHtml(item.planned_action || '')}</td>
+              <td>${escapeHtml(amount)}</td>
+            </tr>
+          `
+        }).join('')
+
+        table.innerHTML = rows || '<tr><td colspan="6" class="muted">Keine importierbaren Buchungen gefunden.</td></tr>'
+      }
+
+      function renderSummaryBox(title, values = {}) {
+        const items = Object.entries(values)
+          .sort((a, b) => b[1] - a[1])
+          .map(([key, value]) => `<li>${escapeHtml(key)}: <strong>${escapeHtml(value)}</strong></li>`)
+          .join('')
+        return `<div class="summary-box"><h3>${escapeHtml(title)}</h3><ul>${items || '<li>Keine</li>'}</ul></div>`
+      }
+
       async function requestJson(url, options = {}) {
         setBusy(true)
         try {
@@ -562,10 +673,12 @@
           })
           document.getElementById('metric-transfer-matches').textContent = data.matched_existing_counterpart ?? 0
           writeJson('import-report', data.report || [])
+          renderPreview(data)
           return data
         } catch (error) {
           document.getElementById('metric-transfer-matches').textContent = 'n/a'
           writeJson('import-report', [{ action: 'preview_error', error: error.message }])
+          renderPreview(null)
           return null
         }
       }

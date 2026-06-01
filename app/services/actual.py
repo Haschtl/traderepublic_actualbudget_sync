@@ -228,18 +228,48 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
     """Read-only preview for mapped transactions against Actual state."""
     external_transfers = [tx for tx in transactions if tx.get("transfer_kind") == "external"]
     depot_transfers = [tx for tx in transactions if tx.get("transfer_kind") == "depot"]
+    cash_account_name = settings.actual_cash_account_name
+    depot_account_name = settings.actual_depot_account_name
+    transfer_account_name = settings.actual_transfer_account_name
+
+    def planned_account_name(tx: Dict) -> str:
+        return depot_account_name if tx.get("account_key") == "depot" else cash_account_name
+
+    def add_count(bucket: Dict[str, int], key: str | None) -> None:
+        bucket[key or "(unknown)"] = bucket.get(key or "(unknown)", 0) + 1
+
+    by_event_type: Dict[str, int] = {}
+    by_account: Dict[str, int] = {}
+    for tx in transactions:
+        add_count(by_event_type, tx.get("event_type"))
+        add_count(by_account, planned_account_name(tx))
 
     if settings.app_mode == "mock":
+        actions = {"mocked": len(transactions)}
         return {
             "status": "mocked",
             "total": len(transactions),
+            "by_event_type": by_event_type,
+            "by_account": by_account,
+            "actions": actions,
             "external_transfers": len(external_transfers),
             "matched_existing_counterpart": 0,
             "unmatched_external_transfers": len(external_transfers),
             "depot_transfers": len(depot_transfers),
             "duplicates": 0,
             "transfer_account_configured": bool(settings.actual_transfer_account_name),
-            "report": [],
+            "report": [
+                {
+                    "source_id": tx.get("source_id"),
+                    "date": tx.get("date"),
+                    "payee": tx.get("payee"),
+                    "event_type": tx.get("event_type"),
+                    "account": planned_account_name(tx),
+                    "amount": tx.get("amount"),
+                    "planned_action": "mocked",
+                }
+                for tx in transactions
+            ],
         }
 
     try:
@@ -262,6 +292,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
     matched = 0
     duplicates = 0
     report = []
+    actions: Dict[str, int] = {}
 
     with Actual(
         base_url=url,
@@ -290,18 +321,72 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 if matched_counterpart:
                     matched += 1
 
+            if duplicate:
+                planned_action = "duplicate"
+            elif matched_counterpart:
+                planned_action = "link_existing_transfer"
+            elif settings.autocreate_transfer and transfer_account is not None:
+                planned_action = "create_external_transfer_pair"
+            else:
+                planned_action = "import_cash_without_counterpart"
+            add_count(actions, planned_action)
+
             report.append({
                 "source_id": imported_id,
                 "date": tx.get("date"),
                 "payee": tx.get("payee"),
                 "event_type": tx.get("event_type"),
+                "account": planned_account_name(tx),
+                "transfer_account": transfer_account_name if tx.get("transfer_kind") == "external" else None,
+                "amount": tx.get("amount"),
+                "transfer_kind": tx.get("transfer_kind"),
+                "planned_action": planned_action,
                 "duplicate": duplicate,
                 "matched_existing_counterpart": matched_counterpart,
+            })
+
+        for tx in depot_transfers:
+            planned_action = "create_cash_depot_transfer"
+            add_count(actions, planned_action)
+            report.append({
+                "source_id": tx.get("source_id"),
+                "date": tx.get("date"),
+                "payee": tx.get("payee"),
+                "event_type": tx.get("event_type"),
+                "account": cash_account_name if (tx.get("amount") or 0) < 0 else depot_account_name,
+                "transfer_account": depot_account_name if (tx.get("amount") or 0) < 0 else cash_account_name,
+                "amount": tx.get("amount"),
+                "transfer_kind": tx.get("transfer_kind"),
+                "planned_action": planned_action,
+                "duplicate": _find_transaction_by_financial_id(session, tx.get("source_id")) is not None,
+                "matched_existing_counterpart": True,
+            })
+
+        for tx in transactions:
+            if tx.get("transfer_kind") is not None:
+                continue
+            duplicate = _find_transaction_by_financial_id(session, tx.get("source_id")) is not None
+            planned_action = "duplicate" if duplicate else "insert_transaction"
+            add_count(actions, planned_action)
+            report.append({
+                "source_id": tx.get("source_id"),
+                "date": tx.get("date"),
+                "payee": tx.get("payee"),
+                "event_type": tx.get("event_type"),
+                "account": planned_account_name(tx),
+                "amount": tx.get("amount"),
+                "transfer_kind": None,
+                "planned_action": planned_action,
+                "duplicate": duplicate,
+                "matched_existing_counterpart": False,
             })
 
     return {
         "status": "ok",
         "total": len(transactions),
+        "by_event_type": by_event_type,
+        "by_account": by_account,
+        "actions": actions,
         "external_transfers": len(external_transfers),
         "matched_existing_counterpart": matched,
         "unmatched_external_transfers": max(0, len(external_transfers) - matched - duplicates),
