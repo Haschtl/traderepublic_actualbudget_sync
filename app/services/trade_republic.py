@@ -1,12 +1,13 @@
 from typing import List, Dict
 from app.core.config import settings
 from app.services.state import load_state
+import asyncio
 import uuid
 import json
 import logging
 from pathlib import Path
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 log = logging.getLogger(__name__)
 
@@ -376,6 +377,17 @@ def _enrich_trade_details(api, items: List[Dict]) -> List[Dict]:
     return items
 
 
+def _filter_timestamp(value: str | None, *, end_of_day: bool = False) -> float:
+    parsed = _parse_filter_date(value)
+    if parsed is None:
+        return float("inf") if end_of_day else float(0)
+    if end_of_day:
+        parsed_dt = datetime.combine(parsed + timedelta(days=1), datetime.min.time())
+    else:
+        parsed_dt = datetime.combine(parsed, datetime.min.time())
+    return parsed_dt.timestamp()
+
+
 def fetch_all_transactions(
     session_id: str | None = None,
     max_pages: int = 1000,
@@ -418,50 +430,36 @@ def fetch_all_transactions(
     if not api.resume_websession():
         log.warning("fetch_all_transactions: resume_websession a échoué; les cookies sont peut-être expirés")
 
-    items: list[Dict] = []
-    seen_ids: set[str] = set()
-    after = None
-    start = _parse_filter_date(from_date)
-    end = _parse_filter_date(to_date)
-
     try:
-        for page in range(1, max_pages + 1):
-            _reset_api_async_state(api)
-            response = api.run_blocking(api.timeline_transactions(after), timeout=30)
-            if not isinstance(response, dict):
-                log.warning("fetch_all_transactions: format de réponse inattendu page %s: %s", page, response)
-                break
+        from pytr.timeline import Timeline
 
-            page_items = _enrich_trade_details(api, response.get("items") or [])
-            log.info("fetch_all_transactions: page %s reçue avec %d transaction(s)", page, len(page_items))
+        _reset_api_async_state(api)
+        timeline = Timeline(
+            api,
+            _sessions_dir() / "timeline",
+            not_before=_filter_timestamp(from_date),
+            not_after=_filter_timestamp(to_date, end_of_day=True),
+            store_event_database=False,
+            scan_for_duplicates=False,
+            dump_raw_data=False,
+        )
+        asyncio.run(timeline.tl_loop())
 
-            page_dates = []
-            for item in page_items:
-                tx_date = _transaction_date(item)
-                if tx_date:
-                    page_dates.append(tx_date)
-                if start and tx_date and tx_date < start:
-                    continue
-                if end and tx_date and tx_date > end:
-                    continue
-                item_id = item.get("id")
-                if item_id and item_id in seen_ids:
-                    continue
-                if item_id:
-                    seen_ids.add(item_id)
-                items.append(item)
+        details_by_id = {
+            event.get("id"): event.get("details")
+            for event in timeline.events
+            if event.get("id") and event.get("details") is not None
+        }
+        items = list(timeline.timeline_transactions.values())
+        for item in items:
+            detail = details_by_id.get(item.get("id"))
+            if detail is not None:
+                item["timelineDetailV2"] = detail
 
-            cursors = response.get("cursors") or {}
-            next_after = cursors.get("after")
-            if not next_after or next_after == after:
-                break
-            if start and page_dates and max(page_dates) < start:
-                break
-            after = next_after
-        else:
-            log.warning("fetch_all_transactions: max_pages=%s atteint, historique possiblement incomplet", max_pages)
-
-        log.info("fetch_all_transactions: %d transaction(s) récupérée(s) au total", len(items))
+        log.info(
+            "fetch_all_transactions: %d transaction(s) récupérée(s) au total via Timeline",
+            len(items),
+        )
         return items
 
     except Exception as e:
