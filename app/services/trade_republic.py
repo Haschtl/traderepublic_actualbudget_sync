@@ -434,8 +434,9 @@ def fetch_all_transactions(
                     seen_ids.add(item_id)
                 items.append(item)
 
-            next_after = (response.get("cursors") or {}).get("after")
-            if not page_items or not next_after or next_after == after:
+            cursors = response.get("cursors") or {}
+            next_after = cursors.get("after")
+            if not next_after or next_after == after:
                 break
             if start and page_dates and max(page_dates) < start:
                 break
