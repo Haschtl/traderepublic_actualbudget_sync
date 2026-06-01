@@ -427,6 +427,23 @@
           sid ? `Aktiv: ${sid.substring(0, 8)}...` : 'Keine Session aktiv'
       }
 
+      async function restoreSessionFromServer() {
+        try {
+          const res = await fetch('/tr/status')
+          if (!res.ok) return
+          const data = await res.json()
+          const sessions = data.sessions || {}
+          const preferred = currentSessionId && sessions[currentSessionId] ? currentSessionId : data.current_session_id
+          if (preferred) {
+            setSessionId(preferred)
+            const status = sessions[preferred]?.status || 'unbekannt'
+            setStatus('Session wiederhergestellt', `Backend-Session ${preferred.substring(0, 8)}... ist ${status}.`, 'success')
+          }
+        } catch (error) {
+          // Best-effort restore only. Keep the UI usable if status is protected or unavailable.
+        }
+      }
+
       function setStatus(title, body = '', type = 'info') {
         const el = document.getElementById('status')
         el.className = `status ${type}`
@@ -613,6 +630,7 @@
       })
 
       setSessionId(currentSessionId)
+      restoreSessionFromServer()
     </script>
   </body>
 </html>

@@ -57,7 +57,7 @@ The web interface is available at **http://your-server:8000**.
 | BASIC_AUTH_PASSWORD | | Optional Basic Auth password |
 | TR_PHONE_NUMBER | ✅ | Trade Republic phone number |
 | TR_PIN | ✅ | Trade Republic PIN |
-| TR_COOKIES_FILE | | Trade Republic cookie file |
+| TR_COOKIES_FILE | | Trade Republic cookie file; session metadata is stored next to it |
 | ACTUAL_URL | ✅ | Actual Budget server URL |
 | ACTUAL_PASSWORD | | Actual server password |
 | ACTUAL_ENCRYPTION_PASSWORD | | Budget encryption password |
@@ -99,7 +99,7 @@ Response:
 { "status": "connected" }
 ```
 
-Session cookies are stored in `TR_COOKIES_FILE`.
+Session cookies and the session metadata are stored next to `TR_COOKIES_FILE`. With `TR_COOKIES_FILE=/data/pytr_cookies.json`, per-session cookies are written under `/data/pytr_cookies_sessions/` and metadata under `/data/pytr_cookies_sessions.json`, so the Docker volume keeps them across restarts.
 
 ---
 

@@ -10,12 +10,11 @@ from datetime import date, datetime
 log = logging.getLogger(__name__)
 
 
-# Simple in-memory session store; persisted to /tmp for survivability
+# Simple in-memory session store; persisted next to TR_COOKIES_FILE for survivability.
 SESSIONS = {}
-SESSIONS_PATH = Path('/tmp/ab_tr_2_tr_sessions.json')
 SESSIONS_LOCK = threading.RLock()
-SESSIONS_DIR = Path('/tmp/ab_tr_2_tr_sessions')
 API_CLIENTS = {}
+LEGACY_SESSIONS_PATH = Path('/tmp/ab_tr_2_tr_sessions.json')
 
 
 def _normalize_phone_number(phone: str | None) -> str | None:
@@ -60,17 +59,41 @@ def _normalize_phone_number(phone: str | None) -> str | None:
 
 def _atomic_write_json(path: Path, payload: Dict):
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        path.parent.chmod(0o700)
+    except Exception:
+        pass
     tmp_path = path.with_suffix(path.suffix + '.tmp')
     tmp_path.write_text(json.dumps(payload))
+    try:
+        tmp_path.chmod(0o600)
+    except Exception:
+        pass
     tmp_path.replace(path)
+
+
+def _sessions_dir() -> Path:
+    cookies_path = Path(settings.tr_cookies_file or "./pytr_cookies.json")
+    if cookies_path.suffix:
+        return cookies_path.parent / f"{cookies_path.stem}_sessions"
+    return cookies_path / "sessions"
+
+
+def _sessions_path() -> Path:
+    cookies_path = Path(settings.tr_cookies_file or "./pytr_cookies.json")
+    if cookies_path.suffix:
+        return cookies_path.parent / f"{cookies_path.stem}_sessions.json"
+    return cookies_path / "sessions.json"
 
 
 def _load_sessions():
     global SESSIONS
     with SESSIONS_LOCK:
-        if SESSIONS_PATH.exists():
+        sessions_path = _sessions_path()
+        source_path = sessions_path if sessions_path.exists() else LEGACY_SESSIONS_PATH
+        if source_path.exists():
             try:
-                SESSIONS = json.loads(SESSIONS_PATH.read_text())
+                SESSIONS = json.loads(source_path.read_text())
             except Exception:
                 SESSIONS = {}
         else:
@@ -80,14 +103,19 @@ def _load_sessions():
 def _save_sessions():
     with SESSIONS_LOCK:
         try:
-            _atomic_write_json(SESSIONS_PATH, SESSIONS)
+            _atomic_write_json(_sessions_path(), SESSIONS)
         except Exception:
             pass
 
 
 def _cookies_file_for_session(session_id: str) -> str:
-    SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
-    return str(SESSIONS_DIR / f'{session_id}.cookies.json')
+    sessions_dir = _sessions_dir()
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        sessions_dir.chmod(0o700)
+    except Exception:
+        pass
+    return str(sessions_dir / f'{session_id}.cookies.json')
 
 
 def _init_session(session_id: str, status: str, message: str) -> Dict:
@@ -567,7 +595,12 @@ def complete_login(code: str, session_id: str | None = None) -> Dict:
 
 def get_login_status() -> Dict:
     _load_sessions()
-    return {"sessions": SESSIONS}
+    sid, _cookies_file = _find_connected_session()
+    return {
+        "current_session_id": sid,
+        "session_store": str(_sessions_path()),
+        "sessions": SESSIONS,
+    }
 
 
 def resend_login(session_id: str) -> Dict:
