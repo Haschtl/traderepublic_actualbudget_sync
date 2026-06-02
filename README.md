@@ -116,7 +116,9 @@ Open `http://127.0.0.1:8000`.
 | `ACTUAL_ENCRYPTION_PASSWORD` | if encrypted | empty | Actual budget encryption password |
 | `ACTUAL_BUDGET_ID` | production | empty | Actual budget file ID or exact name |
 | `ACTUAL_CASH_ACCOUNT_NAME` | yes | `Trade Republic Cash` | Actual cash account for TR cash transactions |
+| `ACTUAL_CASH_ACCOUNT_OFFBUDGET` | no | `false` | If true, keeps the cash account off budget |
 | `ACTUAL_DEPOT_ACCOUNT_NAME` | yes | `Trade Republic Depot` | Actual depot account for investments/trades |
+| `ACTUAL_DEPOT_ACCOUNT_OFFBUDGET` | no | `true` | If true, keeps the depot account off budget |
 | `ACTUAL_TRANSFER_ACCOUNT_NAME` | no | empty | Existing Actual account used to match external bank transfers |
 | `TR_AUTOCREATE_TRANSFER` | no | `false` | If true, creates external transfer counterparts when no match exists |
 | `TR_TRANSFER_MATCH_DAYS` | no | `3` | Date window for external transfer matching |
@@ -130,6 +132,8 @@ The importer uses two Trade Republic accounts inside Actual:
 - `ACTUAL_DEPOT_ACCOUNT_NAME`
 
 They are created automatically if missing.
+By default, cash is on budget and depot is off budget. Override with
+`ACTUAL_CASH_ACCOUNT_OFFBUDGET` and `ACTUAL_DEPOT_ACCOUNT_OFFBUDGET`.
 
 Event mapping:
 

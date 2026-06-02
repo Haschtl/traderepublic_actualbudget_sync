@@ -15,6 +15,11 @@ def _is_truthy(value: Any) -> bool:
     return str(value).lower() in {"1", "true", "yes", "on"}
 
 
+def _configure_account_budget_status(account, offbudget: bool):
+    account.offbudget = int(offbudget)
+    return account
+
+
 def _find_transaction_by_financial_id(session, imported_id: str | None):
     if not imported_id:
         return None
@@ -665,7 +670,10 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
         encryption_password=encryption_password or None,
     ) as actual:
         session = actual.session
-        depot_account = get_or_create_account(session, depot_account_name)
+        depot_account = _configure_account_budget_status(
+            get_or_create_account(session, depot_account_name),
+            settings.actual_depot_account_offbudget,
+        )
         current_cents = session.exec(
             select(func.coalesce(func.sum(Transactions.amount), 0))
             .where(Transactions.acct == depot_account.id)
@@ -790,8 +798,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             encryption_password=encryption_password or None,
         ) as actual:
             session = actual.session
-            cash_account = get_or_create_account(session, cash_account_name)
-            depot_account = get_or_create_account(session, depot_account_name)
+            cash_account = _configure_account_budget_status(
+                get_or_create_account(session, cash_account_name),
+                settings.actual_cash_account_offbudget,
+            )
+            depot_account = _configure_account_budget_status(
+                get_or_create_account(session, depot_account_name),
+                settings.actual_depot_account_offbudget,
+            )
             transfer_account = (
                 get_or_create_account(session, transfer_account_name)
                 if transfer_account_name

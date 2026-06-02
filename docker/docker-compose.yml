@@ -36,7 +36,9 @@ services:
       ACTUAL_BUDGET_ID: "Mon Budget"
       # Comptes Actual auto-créés pour Trade Republic
       ACTUAL_CASH_ACCOUNT_NAME: "Trade Republic Cash"
+      ACTUAL_CASH_ACCOUNT_OFFBUDGET: "false"
       ACTUAL_DEPOT_ACCOUNT_NAME: "Trade Republic Depot"
+      ACTUAL_DEPOT_ACCOUNT_OFFBUDGET: "true"
       # Optional : compte externe pour BANK_TRANSACTION_INCOMING/OUTGOING
       ACTUAL_TRANSFER_ACCOUNT_NAME: ""
       # Optional : crée une contre-écriture externe si aucun match n'existe
