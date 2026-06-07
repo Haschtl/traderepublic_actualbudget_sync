@@ -1,5 +1,6 @@
 import datetime
 import logging
+import re
 from decimal import Decimal
 from typing import List, Dict, Any
 
@@ -9,6 +10,9 @@ log = logging.getLogger(__name__)
 
 DEPOT_VALUATION_PAYEE = "TR Depotwert-Anpassung seit letzter Bewertung"
 DEPOT_VALUATION_IMPORT_PREFIX = "tr-depot-valuation-adjustment:"
+TR_TIMESTAMP_PATTERN = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})"
+)
 
 
 def _is_truthy(value: Any) -> bool:
@@ -31,6 +35,57 @@ def _find_transaction_by_financial_id(session, imported_id: str | None):
     return session.exec(
         select(Transactions).where(Transactions.financial_id == imported_id, Transactions.tombstone == 0)
     ).first()
+
+
+def _extract_tr_timestamps(notes: str | None) -> list[datetime.datetime]:
+    timestamps = []
+    for value in TR_TIMESTAMP_PATTERN.findall(notes or ""):
+        try:
+            timestamps.append(datetime.datetime.fromisoformat(value.replace("Z", "+00:00")))
+        except ValueError:
+            continue
+    return timestamps
+
+
+def _find_cross_source_import_duplicate(
+    session,
+    account,
+    date: datetime.date,
+    amount_eur: float,
+    notes: str | None,
+):
+    """Match an imported TR row whose CSV/API source IDs differ."""
+    if account is None:
+        return None
+    try:
+        from actual.database import Transactions
+        from actual.utils.conversions import date_to_int, decimal_to_cents
+        from sqlmodel import select
+    except ImportError:
+        return None
+
+    incoming_timestamps = _extract_tr_timestamps(notes)
+    if not incoming_timestamps:
+        return None
+
+    candidates = session.exec(
+        select(Transactions)
+        .where(Transactions.acct == account.id)
+        .where(Transactions.date == date_to_int(date))
+        .where(Transactions.amount == decimal_to_cents(Decimal(str(amount_eur))))
+        .where(Transactions.financial_id.is_not(None))
+        .where(Transactions.tombstone == 0)
+        .where(Transactions.is_parent == 0)
+    ).all()
+    for candidate in candidates:
+        existing_timestamps = _extract_tr_timestamps(candidate.notes)
+        if any(
+            abs((incoming - existing).total_seconds()) <= 5
+            for incoming in incoming_timestamps
+            for existing in existing_timestamps
+        ):
+            return candidate
+    return None
 
 
 def _find_matching_transfer_counterpart(session, account, date: datetime.date, amount_eur: float):
@@ -350,21 +405,32 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
         encryption_password=encryption_password or None,
     ) as actual:
         session = actual.session
+        cash_account = get_account(session, cash_account_name)
+        depot_account = get_account(session, depot_account_name)
         transfer_account = get_account(session, transfer_account_name) if transfer_account_name else None
 
         for tx in external_transfers:
             imported_id = tx.get("source_id")
-            duplicate = _find_transaction_by_financial_id(session, imported_id) is not None
+            date = datetime.date.fromisoformat(tx["date"]) if tx.get("date") else None
+            amount_eur = (tx.get("amount") or 0) / 100
+            duplicate_match = _find_transaction_by_financial_id(session, imported_id)
+            if duplicate_match is None and date and amount_eur:
+                duplicate_match = _find_cross_source_import_duplicate(
+                    session,
+                    depot_account if tx.get("account_key") == "depot" else cash_account,
+                    date,
+                    amount_eur,
+                    tx.get("memo"),
+                )
+            duplicate = duplicate_match is not None
             if duplicate:
                 duplicates += 1
 
             matched_counterpart = False
-            actual_match = None
+            actual_match = _serialize_transfer_match(duplicate_match) if duplicate_match else None
             searched_existing_counterpart = False
-            if transfer_account is not None and tx.get("date") and tx.get("amount"):
+            if not duplicate and transfer_account is not None and date and amount_eur:
                 searched_existing_counterpart = True
-                date = datetime.date.fromisoformat(tx["date"])
-                amount_eur = (tx.get("amount") or 0) / 100
                 counterpart_amount = -amount_eur if amount_eur > 0 else abs(amount_eur)
                 counterpart = _find_matching_transfer_counterpart(
                     session,
@@ -404,7 +470,21 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
             })
 
         for tx in depot_transfers:
-            planned_action = "create_cash_depot_transfer"
+            date = datetime.date.fromisoformat(tx["date"]) if tx.get("date") else None
+            amount_eur = (tx.get("amount") or 0) / 100
+            duplicate_match = _find_transaction_by_financial_id(session, tx.get("source_id"))
+            if duplicate_match is None and date and amount_eur:
+                duplicate_match = _find_cross_source_import_duplicate(
+                    session,
+                    cash_account,
+                    date,
+                    amount_eur,
+                    tx.get("memo"),
+                )
+            duplicate = duplicate_match is not None
+            if duplicate:
+                duplicates += 1
+            planned_action = "duplicate" if duplicate else "create_cash_depot_transfer"
             add_count(actions, planned_action)
             report.append({
                 "source_id": tx.get("source_id"),
@@ -416,8 +496,9 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 "amount": tx.get("amount"),
                 "transfer_kind": tx.get("transfer_kind"),
                 "planned_action": planned_action,
-                "duplicate": _find_transaction_by_financial_id(session, tx.get("source_id")) is not None,
+                "duplicate": duplicate,
                 "matched_existing_counterpart": True,
+                "actual_match": _serialize_transfer_match(duplicate_match) if duplicate_match else None,
             })
 
         for tx in transactions:
@@ -854,7 +935,16 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
                 try:
                     if is_transfer and transfer_kind == "external" and transfer_account is not None and amount_eur:
-                        if _find_transaction_by_financial_id(session, imported_id):
+                        duplicate_match = _find_transaction_by_financial_id(session, imported_id)
+                        if duplicate_match is None:
+                            duplicate_match = _find_cross_source_import_duplicate(
+                                session,
+                                account,
+                                date,
+                                amount_eur,
+                                notes,
+                            )
+                        if duplicate_match is not None:
                             duplicates += 1
                             log.debug("Transfert doublon détecté et ignoré (imported_id=%s)", imported_id)
                             report.append({
@@ -903,7 +993,16 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         continue
 
                     if is_transfer and transfer_kind == "depot" and amount_eur:
-                        if _find_transaction_by_financial_id(session, imported_id):
+                        duplicate_match = _find_transaction_by_financial_id(session, imported_id)
+                        if duplicate_match is None:
+                            duplicate_match = _find_cross_source_import_duplicate(
+                                session,
+                                cash_account,
+                                date,
+                                amount_eur,
+                                notes,
+                            )
+                        if duplicate_match is not None:
                             duplicates += 1
                             log.debug("Trade-Transfer doublon détecté et ignoré (imported_id=%s)", imported_id)
                             report.append({

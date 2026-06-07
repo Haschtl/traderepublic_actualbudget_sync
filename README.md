@@ -25,7 +25,9 @@ It supports both the Trade Republic API via [`pytr`](https://github.com/pytr-org
 - Reset helper for deleting imported TR rows and unlinking matched external transfers.
 - Explicit depot valuation adjustment to align the Actual depot balance with the current Trade Republic market value.
 - Automatic Trade Republic depot value lookup after login, plus a manual `TR-Wert laden` button.
-- Duplicate detection through Actual `financial_id`.
+- Duplicate detection through Actual `financial_id`, with an
+  account/date/amount and near-identical timestamp fallback for transfers
+  whose CSV and API IDs differ.
 - Full Trade Republic details are written into Actual notes.
 - Pending/cleared handling.
 - Optional scheduled sync with cron syntax.
