@@ -364,12 +364,44 @@ def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
     }
 
 
+def _as_position_payload(response: Any) -> Dict:
+    if isinstance(response, dict):
+        positions = response.get("positions")
+        if isinstance(positions, list):
+            return response
+
+        for key in ("portfolio", "compactPortfolio"):
+            nested = response.get(key)
+            if isinstance(nested, dict):
+                normalized = _as_position_payload(nested)
+                if normalized.get("positions") is not None:
+                    return normalized
+
+    if isinstance(response, list):
+        return {"positions": response}
+
+    return {"positions": []}
+
+
 async def _fetch_compact_portfolio(api) -> Dict:
     subscription_id = await api.compact_portfolio()
     try:
-        return await _receive_subscription_response(api, subscription_id)
-    finally:
+        response = await _receive_subscription_response(api, subscription_id)
+    except Exception as exc:
         await _unsubscribe_safely(api, subscription_id)
+        if "BAD_SUBSCRIPTION_TYPE" not in str(exc) or not hasattr(api, "portfolio"):
+            raise
+
+        log.info("compactPortfolio subscription rejected by Trade Republic, falling back to portfolio: %s", exc)
+        fallback_subscription_id = await api.portfolio()
+        try:
+            return _as_position_payload(await _receive_subscription_response(api, fallback_subscription_id))
+        finally:
+            await _unsubscribe_safely(api, fallback_subscription_id)
+
+    else:
+        await _unsubscribe_safely(api, subscription_id)
+        return _as_position_payload(response)
 
 
 async def _fetch_cash(api) -> Any:
