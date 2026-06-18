@@ -370,7 +370,7 @@ def _as_position_payload(response: Any) -> Dict:
         if isinstance(positions, list):
             return response
 
-        for key in ("portfolio", "compactPortfolio"):
+        for key in ("portfolio", "compactPortfolio", "compactPortfolioByType"):
             nested = response.get(key)
             if isinstance(nested, dict):
                 normalized = _as_position_payload(nested)
@@ -383,25 +383,60 @@ def _as_position_payload(response: Any) -> Dict:
     return {"positions": []}
 
 
+def _securities_account_number(api) -> str | None:
+    sec_acc_no = getattr(api, "_sec_acc_no", None)
+    if sec_acc_no:
+        return str(sec_acc_no)
+
+    settings_method = getattr(api, "settings", None)
+    if not callable(settings_method):
+        return None
+
+    account_settings = settings_method()
+    if isinstance(account_settings, dict):
+        sec_acc_no = account_settings.get("securitiesAccountNumber")
+    if not sec_acc_no:
+        raise ValueError("Trade Republic securities account number is missing from account settings.")
+
+    api._sec_acc_no = sec_acc_no
+    return str(sec_acc_no)
+
+
+async def _fetch_position_subscription(api, payload: Dict[str, Any]) -> Dict:
+    subscription_id = await api.subscribe(payload)
+    try:
+        response = await _receive_subscription_response(api, subscription_id)
+        return _as_position_payload(response)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
+
+
 async def _fetch_compact_portfolio(api) -> Dict:
+    sec_acc_no = _securities_account_number(api)
+    if sec_acc_no and hasattr(api, "subscribe"):
+        last_error = None
+        for topic in ("compactPortfolio", "compactPortfolioByType"):
+            try:
+                return await _fetch_position_subscription(
+                    api,
+                    {"type": topic, "secAccNo": sec_acc_no},
+                )
+            except Exception as exc:
+                if "BAD_SUBSCRIPTION_TYPE" not in str(exc):
+                    raise
+                last_error = exc
+                log.info("%s subscription rejected by Trade Republic: %s", topic, exc)
+
+        if last_error is not None:
+            raise last_error
+
+    # Compatibility with API wrappers that already implement the current payload.
     subscription_id = await api.compact_portfolio()
     try:
         response = await _receive_subscription_response(api, subscription_id)
-    except Exception as exc:
-        await _unsubscribe_safely(api, subscription_id)
-        if "BAD_SUBSCRIPTION_TYPE" not in str(exc) or not hasattr(api, "portfolio"):
-            raise
-
-        log.info("compactPortfolio subscription rejected by Trade Republic, falling back to portfolio: %s", exc)
-        fallback_subscription_id = await api.portfolio()
-        try:
-            return _as_position_payload(await _receive_subscription_response(api, fallback_subscription_id))
-        finally:
-            await _unsubscribe_safely(api, fallback_subscription_id)
-
-    else:
-        await _unsubscribe_safely(api, subscription_id)
         return _as_position_payload(response)
+    finally:
+        await _unsubscribe_safely(api, subscription_id)
 
 
 async def _fetch_cash(api) -> Any:
