@@ -3,9 +3,9 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# system deps
+# Install runtime libraries. All Python dependencies publish binary wheels.
+COPY requirements.txt /app/requirements.txt
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
     libglib2.0-0 \
     libnss3 \
     libnspr4 \
@@ -28,21 +28,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgtk-3-0 \
     fonts-liberation \
     gosu \
+    && pip install --no-cache-dir -r /app/requirements.txt \
+    && python -m playwright install --only-shell chromium \
     && rm -rf /var/lib/apt/lists/*
 
-# copy and install requirements
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
-
-# Install Playwright browser used by pytr web login flow.
-RUN python -m playwright install chromium
-
-# copy application
-COPY . /app
+# Copy only runtime files.
+COPY app /app/app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN useradd --create-home --uid 10001 appuser \
     && mkdir -p /data \
     && chown -R appuser:appuser /app /data /ms-playwright
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV APP_MODE=production
