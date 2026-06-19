@@ -558,7 +558,20 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
         for tx in transactions:
             if tx.get("transfer_kind") is not None:
                 continue
-            duplicate = _find_transaction_by_financial_id(session, tx.get("source_id")) is not None
+            date = datetime.date.fromisoformat(tx["date"]) if tx.get("date") else None
+            amount_eur = (tx.get("amount") or 0) / 100
+            duplicate_match = _find_transaction_by_financial_id(session, tx.get("source_id"))
+            if duplicate_match is None and date and amount_eur:
+                duplicate_match = _find_cross_source_import_duplicate(
+                    session,
+                    depot_account if tx.get("account_key") == "depot" else cash_account,
+                    date,
+                    amount_eur,
+                    tx.get("memo"),
+                )
+            duplicate = duplicate_match is not None
+            if duplicate:
+                duplicates += 1
             planned_action = "duplicate" if duplicate else "insert_transaction"
             add_count(actions, planned_action)
             report.append({
@@ -572,6 +585,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                 "planned_action": planned_action,
                 "duplicate": duplicate,
                 "matched_existing_counterpart": False,
+                "actual_match": _serialize_transfer_match(duplicate_match) if duplicate_match else None,
             })
 
     return {
@@ -1080,6 +1094,29 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             "transfer_kind": transfer_kind,
                             "amount": amount_eur,
                             "action": "created_transfer",
+                        })
+                        continue
+
+                    duplicate_match = _find_transaction_by_financial_id(session, imported_id)
+                    if duplicate_match is None and date and amount_eur:
+                        duplicate_match = _find_cross_source_import_duplicate(
+                            session,
+                            account,
+                            date,
+                            amount_eur,
+                            notes,
+                        )
+                    if duplicate_match is not None:
+                        duplicates += 1
+                        log.debug("Skipping cross-source duplicate transaction (imported_id=%s)", imported_id)
+                        report.append({
+                            "source_id": imported_id,
+                            "date": date_str,
+                            "payee": payee,
+                            "event_type": tx.get("event_type"),
+                            "account": account.name,
+                            "amount": amount_eur,
+                            "action": "duplicate",
                         })
                         continue
 

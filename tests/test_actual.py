@@ -119,3 +119,34 @@ def test_existing_linked_transfer_is_detected_across_booking_dates():
         )
 
         assert match.id == cash_side.id
+
+
+def test_interest_payment_duplicate_is_detected_across_csv_and_api_ids():
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        cash = Accounts(id="cash", name="Trade Republic Cash", offbudget=0, closed=0)
+        existing = Transactions(
+            id="interest",
+            acct=cash.id,
+            date=date_to_int(datetime.date(2026, 3, 1)),
+            amount=1903,
+            financial_id="019ca879-ea1f-7691-8d2e-7f0acaa7b215",
+            notes='Trade Republic raw: {"timestamp": "2026-03-01T08:18:08.031957Z"}',
+            tombstone=0,
+            is_parent=0,
+        )
+        session.add(cash)
+        session.add(existing)
+        session.commit()
+
+        match = _find_cross_source_import_duplicate(
+            session,
+            cash,
+            datetime.date(2026, 3, 1),
+            19.03,
+            'Trade Republic raw: {"id": "different-api-id", "timestamp": "2026-03-01T08:18:08.031957Z"}',
+        )
+
+        assert match.id == existing.id
