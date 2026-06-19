@@ -168,6 +168,52 @@
         gap: 10px;
       }
 
+      dialog {
+        width: min(420px, calc(100vw - 32px));
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        color: var(--text);
+        box-shadow: 0 20px 48px rgba(16, 24, 40, 0.22);
+      }
+
+      dialog::backdrop {
+        background: rgba(16, 24, 40, 0.48);
+      }
+
+      .dialog-form {
+        display: grid;
+        gap: 18px;
+        padding: 20px;
+      }
+
+      .dialog-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .dialog-header h2 {
+        margin-bottom: 4px;
+      }
+
+      .dialog-close {
+        width: 34px;
+        height: 34px;
+        flex: 0 0 34px;
+        padding: 0;
+        border-color: var(--line);
+        font-size: 22px;
+        line-height: 1;
+      }
+
+      .dialog-actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+
       .status {
         border-radius: 8px;
         padding: 14px 16px;
@@ -513,14 +559,6 @@
           <div class="toolbar">
             <button id="btn-connect" class="primary" data-i18n="connect.start">TR Login starten</button>
           </div>
-          <div class="field-row">
-            <label><span data-i18n="connect.code">Code / PIN</span>
-              <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Code eingeben" data-i18n-placeholder="connect.codePlaceholder" />
-            </label>
-            <label><span data-i18n="connect.action">Aktion</span>
-              <button id="btn-complete" class="secondary" data-i18n="connect.confirm">Code bestätigen</button>
-            </label>
-          </div>
         </div>
 
         <div class="panel span-8 stack">
@@ -618,9 +656,27 @@
           </div>
         </div>
       </section>
+
+      <dialog id="login-dialog" aria-labelledby="login-dialog-title">
+        <form id="login-form" class="dialog-form">
+          <div class="dialog-header">
+            <div>
+              <h2 id="login-dialog-title" data-i18n="connect.dialogTitle">Trade Republic Login</h2>
+              <p class="muted" data-i18n="connect.dialogBody">Gib den von Trade Republic gesendeten Code ein.</p>
+            </div>
+            <button id="btn-close-login" class="dialog-close" type="button" aria-label="Dialog schließen" data-i18n-aria-label="connect.close" title="Dialog schließen" data-i18n-title="connect.close">&times;</button>
+          </div>
+          <label><span data-i18n="connect.code">Code / PIN</span>
+            <input id="otp" name="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Code eingeben" data-i18n-placeholder="connect.codePlaceholder" autofocus />
+          </label>
+          <div class="dialog-actions">
+            <button id="btn-complete" class="primary" type="submit" data-i18n="connect.confirm">Code bestätigen</button>
+          </div>
+        </form>
+      </dialog>
     </main>
 
-    <script src="/static/i18n.js?v=20260619-2"></script>
+    <script src="/static/i18n.js?v=20260619-3"></script>
     <script>
       let currentSessionId = localStorage.getItem('tr_session_id') || null
       let lastRawTransactions = []
@@ -630,9 +686,21 @@
       const t = window.i18n.t
 
       const buttons = Array.from(document.querySelectorAll('button'))
+      const loginDialog = document.getElementById('login-dialog')
+      const loginForm = document.getElementById('login-form')
+      const otpInput = document.getElementById('otp')
 
       function setBusy(isBusy) {
         buttons.forEach((button) => { button.disabled = isBusy || (button.id === 'btn-sync' && !lastMappedTransactions.length) })
+      }
+
+      function openLoginDialog() {
+        if (!loginDialog.open) loginDialog.showModal()
+        requestAnimationFrame(() => otpInput.focus())
+      }
+
+      function closeLoginDialog() {
+        if (loginDialog.open) loginDialog.close()
       }
 
       function updatePushButton() {
@@ -1152,20 +1220,26 @@
       })
 
       document.getElementById('btn-connect').addEventListener('click', async () => {
+        otpInput.value = ''
+        openLoginDialog()
         try {
           setStatus(t('status.loginStarting'), t('status.loginStartingBody'))
           const data = await requestJson('/tr/connect', { method: 'POST' })
           if (data.session_id) setSessionId(data.session_id)
           setStatus(t('status.loginStarted'), data.message || JSON.stringify(data), 'success')
+          otpInput.focus()
         } catch (error) {
+          closeLoginDialog()
           setStatus(t('status.loginFailed'), error.message, 'error')
         }
       })
 
-      document.getElementById('btn-complete').addEventListener('click', async () => {
-        const code = document.getElementById('otp').value.trim()
+      loginForm.addEventListener('submit', async (event) => {
+        event.preventDefault()
+        const code = otpInput.value.trim()
         if (!code) {
           setStatus(t('status.codeMissing'), t('status.codeMissingBody'), 'error')
+          otpInput.focus()
           return
         }
         try {
@@ -1176,7 +1250,8 @@
             body: JSON.stringify({ code, session_id: currentSessionId })
           })
           if (data.session_id) setSessionId(data.session_id)
-          document.getElementById('otp').value = ''
+          otpInput.value = ''
+          closeLoginDialog()
           setStatus(t('status.connected'), data.message || t('status.connectedBody'), 'success')
           try {
             await loadDepotValueFromTradeRepublic({ silent: false })
@@ -1185,7 +1260,14 @@
           }
         } catch (error) {
           setStatus(t('status.codeFailed'), error.message, 'error')
+          otpInput.focus()
+          otpInput.select()
         }
+      })
+
+      document.getElementById('btn-close-login').addEventListener('click', closeLoginDialog)
+      loginDialog.addEventListener('click', (event) => {
+        if (event.target === loginDialog) closeLoginDialog()
       })
 
       document.getElementById('btn-map').addEventListener('click', async () => {

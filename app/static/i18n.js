@@ -23,6 +23,9 @@
       'connect.title': '1. Verbinden',
       'connect.body': 'Startet den Login und speichert die Session-ID lokal im Browser.',
       'connect.start': 'TR Login starten',
+      'connect.dialogTitle': 'Trade Republic Login',
+      'connect.dialogBody': 'Gib den von Trade Republic gesendeten Code ein.',
+      'connect.close': 'Dialog schließen',
       'connect.code': 'Code / PIN',
       'connect.codePlaceholder': 'Code eingeben',
       'connect.action': 'Aktion',
@@ -184,7 +187,7 @@
       'session.validity.unknown': 'Session status unknown', 'session.validity.valid': 'Session valid', 'session.validity.expired': 'Session expired; reconnect required', 'session.validity.mock': 'Mock session active', 'session.validity.none': 'No backend session', 'session.validity.other': 'Session status: {status}',
       'session.sync.none': 'No sync recorded yet', 'session.sync.failed': 'Last sync failed: {error}', 'session.sync.success': 'Last successful sync: {date}', 'session.forget': 'Forget session', 'session.restored.title': 'Session restored', 'session.restored.body': 'Backend session {id}... is {status}.',
       'ready.title': 'Ready', 'ready.body': 'Start with the Trade Republic login or run a sync using an existing session.',
-      'connect.title': '1. Connect', 'connect.body': 'Starts login and stores the session ID locally in this browser.', 'connect.start': 'Start TR login', 'connect.code': 'Code / PIN', 'connect.codePlaceholder': 'Enter code', 'connect.action': 'Action', 'connect.confirm': 'Confirm code',
+      'connect.title': '1. Connect', 'connect.body': 'Starts login and stores the session ID locally in this browser.', 'connect.start': 'Start TR login', 'connect.dialogTitle': 'Trade Republic login', 'connect.dialogBody': 'Enter the code sent by Trade Republic.', 'connect.close': 'Close dialog', 'connect.code': 'Code / PIN', 'connect.codePlaceholder': 'Enter code', 'connect.action': 'Action', 'connect.confirm': 'Confirm code',
       'sync.title': '2. Synchronize', 'sync.body': 'Import and review data from Trade Republic or CSV, then push that exact preview to Actual Budget.', 'sync.trImport': 'TR import', 'sync.csvImport': 'CSV import', 'sync.push': 'Push to Actual', 'sync.historyFrom': 'History from', 'sync.historyTo': 'History to', 'sync.portfolioValue': 'Current TR portfolio value', 'sync.portfolioPlaceholder': 'e.g. 3000.00', 'sync.portfolioBalance': 'Portfolio balance', 'sync.loadValue': 'Load TR value', 'sync.adjustValue': 'Adjust portfolio value',
       'depot.title': '3. Adjust portfolio value',
       'results.title': 'Latest result', 'results.fetched': 'Fetched', 'results.mapped': 'Mapped', 'results.imported': 'Imported', 'results.duplicates': 'Duplicates', 'results.matches': 'Transfer matches',
@@ -225,6 +228,10 @@
     document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
       const translated = t(element.dataset.i18nAriaLabel)
       if (translated !== element.dataset.i18nAriaLabel) element.setAttribute('aria-label', translated)
+    })
+    document.querySelectorAll('[data-i18n-title]').forEach((element) => {
+      const translated = t(element.dataset.i18nTitle)
+      if (translated !== element.dataset.i18nTitle) element.title = translated
     })
     document.querySelectorAll('[data-language]').forEach((button) => {
       const active = button.dataset.language === language
