@@ -374,21 +374,10 @@ def _as_position_payload(response: Any) -> Dict:
                 positions.extend(collect_positions(nested))
         return positions
 
+    positions = collect_positions(response)
     if isinstance(response, dict):
-        positions = response.get("positions")
-        if isinstance(positions, list):
-            normalized = collect_positions(positions)
-            if normalized or not positions:
-                return {**response, "positions": normalized}
-
-        for key in ("portfolio", "compactPortfolio", "compactPortfolioByType"):
-            nested = response.get(key)
-            if isinstance(nested, dict):
-                normalized = _as_position_payload(nested)
-                if normalized.get("positions") is not None:
-                    return normalized
-
-    return {"positions": collect_positions(response), "raw": response}
+        return {**response, "positions": positions}
+    return {"positions": positions, "raw": response}
 
 
 def _securities_account_number(api) -> str | None:

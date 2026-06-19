@@ -141,6 +141,7 @@ class FakeGroupedPortfolioByTypeApi(FakeSecAccountPortfolioApi):
             response = {"positions": []}
         else:
             response = {
+                "positions": [],
                 "portfolios": [
                     {
                         "portfolioType": "SECURITIES",
