@@ -212,7 +212,7 @@ async def tr_depot_value(payload: Optional[dict] = None):
     try:
         return await asyncio.to_thread(tr_fetch_depot_value, session_id)
     except NotImplementedError as e:
-        raise HTTPException(status_code=501, detail=str(e))
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

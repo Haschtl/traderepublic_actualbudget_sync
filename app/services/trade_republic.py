@@ -359,8 +359,9 @@ def _as_position_payload(response: Any) -> Dict:
             return positions
         if not isinstance(value, dict):
             return []
-        if value.get("instrumentId"):
-            return [value]
+        instrument_id = value.get("instrumentId") or value.get("isin")
+        if instrument_id:
+            return [{**value, "instrumentId": instrument_id}]
 
         direct = value.get("positions")
         if isinstance(direct, list):
@@ -413,7 +414,7 @@ async def _fetch_compact_portfolio(api) -> Dict:
     if sec_acc_no and hasattr(api, "subscribe"):
         last_error = None
         received_empty_portfolio = False
-        for topic in ("compactPortfolio", "compactPortfolioByType"):
+        for topic in ("compactPortfolioByType", "compactPortfolio"):
             try:
                 portfolio = await _fetch_position_subscription(
                     api,
@@ -422,7 +423,11 @@ async def _fetch_compact_portfolio(api) -> Dict:
                 if portfolio.get("positions"):
                     return portfolio
                 received_empty_portfolio = True
-                log.warning("%s returned no recognizable positions", topic)
+                log.warning(
+                    "%s returned no recognizable positions (keys=%s)",
+                    topic,
+                    sorted(portfolio.keys()),
+                )
             except Exception as exc:
                 if "BAD_SUBSCRIPTION_TYPE" not in str(exc):
                     raise

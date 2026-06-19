@@ -117,11 +117,11 @@ class FakeSecAccountPortfolioApi(FakePortfolioApi):
 
 class FakePortfolioByTypeApi(FakeSecAccountPortfolioApi):
     async def subscribe(self, payload):
-        if payload["type"] == "compactPortfolio":
+        if payload["type"] == "compactPortfolioByType":
             self.portfolio_payloads.append(payload)
             return self._subscribe(
                 payload,
-                "BAD_SUBSCRIPTION_TYPE: Unknown topic type: compactPortfolio.31",
+                "BAD_SUBSCRIPTION_TYPE: Unknown topic type: compactPortfolioByType.31",
             )
         return await super().subscribe(payload)
 
@@ -129,7 +129,7 @@ class FakePortfolioByTypeApi(FakeSecAccountPortfolioApi):
         subscription_id = next(iter(self.subscriptions))
         subscription = self.subscriptions[subscription_id]
         response = self.responses[subscription_id]
-        if subscription.get("type") == "compactPortfolio":
+        if subscription.get("type") == "compactPortfolioByType":
             raise Exception(response)
         return subscription_id, subscription, response
 
@@ -142,12 +142,12 @@ class FakeGroupedPortfolioByTypeApi(FakeSecAccountPortfolioApi):
         else:
             response = {
                 "positions": [],
-                "portfolios": [
+                "categories": [
                     {
-                        "portfolioType": "SECURITIES",
+                        "categoryType": "stocksAndETFs",
                         "positions": [
-                            {"instrumentId": "IE00B57X3V84", "netSize": "31.293027", "averageBuyIn": "79.922"},
-                            {"instrumentId": "XF000ETH0019", "netSize": "0.0076", "averageBuyIn": "3807.6711"},
+                            {"isin": "IE00B57X3V84", "netSize": "31.293027", "averageBuyIn": "79.922"},
+                            {"isin": "XF000ETH0019", "netSize": "0.0076", "averageBuyIn": "3807.6711"},
                         ],
                     }
                 ]
@@ -239,19 +239,19 @@ def test_fetch_depot_value_summary_sends_securities_account_number():
     api = FakeSecAccountPortfolioApi()
     summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
 
-    assert api.portfolio_payloads == [{"type": "compactPortfolio", "secAccNo": "SEC-123"}]
+    assert api.portfolio_payloads == [{"type": "compactPortfolioByType", "secAccNo": "SEC-123"}]
     assert summary["depot_value"] == 3159.70
     assert summary["positions"] == 2
     assert summary["valued_positions"] == 2
 
 
-def test_fetch_depot_value_summary_falls_back_to_compact_portfolio_by_type():
+def test_fetch_depot_value_summary_falls_back_to_compact_portfolio():
     api = FakePortfolioByTypeApi()
     summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
 
     assert api.portfolio_payloads == [
-        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
         {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
+        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
     ]
     assert summary["depot_value"] == 3159.70
     assert summary["positions"] == 2
@@ -263,7 +263,6 @@ def test_fetch_depot_value_summary_unpacks_grouped_portfolio_by_type():
     summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
 
     assert api.portfolio_payloads == [
-        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
         {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
     ]
     assert summary["depot_value"] == 3159.70
@@ -278,6 +277,6 @@ def test_fetch_depot_value_summary_rejects_empty_portfolio_responses():
         asyncio.run(trade_republic._fetch_depot_value_summary(api))
 
     assert api.portfolio_payloads == [
-        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
         {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
+        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
     ]
