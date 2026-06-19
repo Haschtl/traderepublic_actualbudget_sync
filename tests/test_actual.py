@@ -7,6 +7,7 @@ from sqlmodel import SQLModel, Session, create_engine
 from app.services.actual import (
     _find_cross_source_import_duplicate,
     _find_existing_linked_transfer_duplicate,
+    _find_trade_import_duplicate,
 )
 
 
@@ -154,3 +155,52 @@ def test_interest_payment_duplicate_is_detected_across_csv_and_api_ids():
         )
 
         assert match.id == existing.id
+
+
+def test_trade_duplicate_uses_date_and_isin_when_timeline_amount_differs():
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        cash = Accounts(id="cash", name="Trade Republic Cash", offbudget=0, closed=0)
+        whole_shares = Transactions(
+            id="csv-trade-whole",
+            acct=cash.id,
+            date=date_to_int(datetime.date(2026, 5, 12)),
+            amount=-247659,
+            financial_id="d1cde3a9-0a9c-4c60-bb22-b666802ed3da",
+            notes=(
+                "Buy trade IE00B57X3V84\n"
+                "TR eventType: TRADING_TRADE_EXECUTED\n"
+                'Trade Republic raw: {"csv": {"fee": "-1.00"}}'
+            ),
+            tombstone=0,
+            is_parent=0,
+        )
+        fractional_shares = Transactions(
+            id="csv-trade-fractional",
+            acct=cash.id,
+            date=date_to_int(datetime.date(2026, 5, 12)),
+            amount=-2341,
+            financial_id="aed6b632-826e-4fb9-ad48-eac09c1040c2",
+            notes=(
+                "Buy trade IE00B57X3V84\n"
+                "TR eventType: TRADING_TRADE_EXECUTED"
+            ),
+            tombstone=0,
+            is_parent=0,
+        )
+        session.add(cash)
+        session.add(whole_shares)
+        session.add(fractional_shares)
+        session.commit()
+
+        match = _find_trade_import_duplicate(
+            session,
+            cash,
+            datetime.date(2026, 5, 12),
+            -2501,
+            "API trade amount: -2501.00, instrument: IE00B57X3V84",
+        )
+
+        assert match.id in {whole_shares.id, fractional_shares.id}

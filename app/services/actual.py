@@ -14,6 +14,8 @@ DEPOT_VALUATION_IMPORT_PREFIX = "tr-depot-valuation-adjustment:"
 TR_TIMESTAMP_PATTERN = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})"
 )
+TR_ISIN_PATTERN = re.compile(r"\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b")
+TR_CSV_FEE_PATTERN = re.compile(r'"fee"\s*:\s*"(-?\d+(?:\.\d+)?)"')
 DATE_AMOUNT_EVENT_DUPLICATES = {"INTEREST_PAYOUT"}
 
 
@@ -151,6 +153,59 @@ def _find_existing_linked_transfer_duplicate(
         ).first()
         if linked is not None:
             return linked
+    return None
+
+
+def _find_trade_import_duplicate(
+    session,
+    account,
+    date: datetime.date,
+    amount_eur: float,
+    notes: str | None,
+):
+    """Match an API trade to one or more CSV executions by date and ISIN."""
+    if account is None:
+        return None
+    incoming_isins = set(TR_ISIN_PATTERN.findall(notes or ""))
+    if not incoming_isins:
+        return None
+    try:
+        from actual.database import Transactions
+        from actual.utils.conversions import date_to_int, decimal_to_cents
+        from sqlmodel import select
+    except ImportError:
+        return None
+
+    candidates = session.exec(
+        select(Transactions)
+        .where(Transactions.acct == account.id)
+        .where(Transactions.date == date_to_int(date))
+        .where(Transactions.financial_id.is_not(None))
+        .where(Transactions.tombstone == 0)
+        .where(Transactions.is_parent == 0)
+    ).all()
+    matching_candidates = []
+    for candidate in candidates:
+        candidate_notes = candidate.notes or ""
+        if (
+            "TR eventType: TRADING_TRADE_EXECUTED" in candidate_notes
+            and incoming_isins.intersection(TR_ISIN_PATTERN.findall(candidate_notes))
+        ):
+            matching_candidates.append(candidate)
+    if not matching_candidates:
+        return None
+
+    target_amount = decimal_to_cents(Decimal(str(amount_eur)))
+    executions_total = sum(candidate.amount or 0 for candidate in matching_candidates)
+    fee_total = sum(
+        decimal_to_cents(Decimal(fee))
+        for candidate in matching_candidates
+        for fee in TR_CSV_FEE_PATTERN.findall(candidate.notes or "")
+    )
+    tolerance = max(0, settings.transfer_match_tolerance_cents)
+    totals = {executions_total, executions_total + fee_total}
+    if any(abs(total - target_amount) <= tolerance for total in totals):
+        return matching_candidates[0]
     return None
 
 
@@ -536,6 +591,14 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
             date = datetime.date.fromisoformat(tx["date"]) if tx.get("date") else None
             amount_eur = (tx.get("amount") or 0) / 100
             duplicate_match = _find_transaction_by_financial_id(session, tx.get("source_id"))
+            if duplicate_match is None and date:
+                duplicate_match = _find_trade_import_duplicate(
+                    session,
+                    cash_account,
+                    date,
+                    amount_eur,
+                    tx.get("memo"),
+                )
             if duplicate_match is None and date and amount_eur:
                 duplicate_match = _find_cross_source_import_duplicate(
                     session,
@@ -1061,6 +1124,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
                     if is_transfer and transfer_kind == "depot" and amount_eur:
                         duplicate_match = _find_transaction_by_financial_id(session, imported_id)
+                        if duplicate_match is None:
+                            duplicate_match = _find_trade_import_duplicate(
+                                session,
+                                cash_account,
+                                date,
+                                amount_eur,
+                                notes,
+                            )
                         if duplicate_match is None:
                             duplicate_match = _find_cross_source_import_duplicate(
                                 session,
