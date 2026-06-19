@@ -351,10 +351,35 @@ def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
 
 
 def _as_position_payload(response: Any) -> Dict:
+    def collect_positions(value: Any) -> List[Dict]:
+        if isinstance(value, list):
+            positions = []
+            for item in value:
+                positions.extend(collect_positions(item))
+            return positions
+        if not isinstance(value, dict):
+            return []
+        if value.get("instrumentId"):
+            return [value]
+
+        direct = value.get("positions")
+        if isinstance(direct, list):
+            positions = collect_positions(direct)
+            if positions:
+                return positions
+
+        positions = []
+        for key, nested in value.items():
+            if key != "positions":
+                positions.extend(collect_positions(nested))
+        return positions
+
     if isinstance(response, dict):
         positions = response.get("positions")
         if isinstance(positions, list):
-            return response
+            normalized = collect_positions(positions)
+            if normalized or not positions:
+                return {**response, "positions": normalized}
 
         for key in ("portfolio", "compactPortfolio", "compactPortfolioByType"):
             nested = response.get(key)
@@ -363,10 +388,7 @@ def _as_position_payload(response: Any) -> Dict:
                 if normalized.get("positions") is not None:
                     return normalized
 
-    if isinstance(response, list):
-        return {"positions": response}
-
-    return {"positions": []}
+    return {"positions": collect_positions(response), "raw": response}
 
 
 def _securities_account_number(api) -> str | None:
@@ -401,18 +423,25 @@ async def _fetch_compact_portfolio(api) -> Dict:
     sec_acc_no = _securities_account_number(api)
     if sec_acc_no and hasattr(api, "subscribe"):
         last_error = None
+        received_empty_portfolio = False
         for topic in ("compactPortfolio", "compactPortfolioByType"):
             try:
-                return await _fetch_position_subscription(
+                portfolio = await _fetch_position_subscription(
                     api,
                     {"type": topic, "secAccNo": sec_acc_no},
                 )
+                if portfolio.get("positions"):
+                    return portfolio
+                received_empty_portfolio = True
+                log.warning("%s returned no recognizable positions", topic)
             except Exception as exc:
                 if "BAD_SUBSCRIPTION_TYPE" not in str(exc):
                     raise
                 last_error = exc
                 log.info("%s subscription rejected by Trade Republic: %s", topic, exc)
 
+        if received_empty_portfolio:
+            raise ValueError(tr("tr.portfolio_response_empty"))
         if last_error is not None:
             raise last_error
 

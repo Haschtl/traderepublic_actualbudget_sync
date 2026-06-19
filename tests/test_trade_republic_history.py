@@ -1,6 +1,7 @@
 from app.core.config import settings
 from app.services import trade_republic
 import asyncio
+import pytest
 
 
 class FakeTimelineApi:
@@ -133,6 +134,32 @@ class FakePortfolioByTypeApi(FakeSecAccountPortfolioApi):
         return subscription_id, subscription, response
 
 
+class FakeGroupedPortfolioByTypeApi(FakeSecAccountPortfolioApi):
+    async def subscribe(self, payload):
+        self.portfolio_payloads.append(payload)
+        if payload["type"] == "compactPortfolio":
+            response = {"positions": []}
+        else:
+            response = {
+                "portfolios": [
+                    {
+                        "portfolioType": "SECURITIES",
+                        "positions": [
+                            {"instrumentId": "IE00B57X3V84", "netSize": "31.293027", "averageBuyIn": "79.922"},
+                            {"instrumentId": "XF000ETH0019", "netSize": "0.0076", "averageBuyIn": "3807.6711"},
+                        ],
+                    }
+                ]
+            }
+        return self._subscribe(payload, response)
+
+
+class FakeEmptyPortfolioApi(FakeSecAccountPortfolioApi):
+    async def subscribe(self, payload):
+        self.portfolio_payloads.append(payload)
+        return self._subscribe(payload, {"positions": []})
+
+
 def test_fetch_all_transactions_mock_filters_date_range():
     original_mode = settings.app_mode
     settings.app_mode = "mock"
@@ -228,3 +255,28 @@ def test_fetch_depot_value_summary_falls_back_to_compact_portfolio_by_type():
     assert summary["depot_value"] == 3159.70
     assert summary["positions"] == 2
     assert summary["valued_positions"] == 2
+
+
+def test_fetch_depot_value_summary_unpacks_grouped_portfolio_by_type():
+    api = FakeGroupedPortfolioByTypeApi()
+    summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
+
+    assert api.portfolio_payloads == [
+        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
+        {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
+    ]
+    assert summary["depot_value"] == 3159.70
+    assert summary["positions"] == 2
+    assert summary["valued_positions"] == 2
+
+
+def test_fetch_depot_value_summary_rejects_empty_portfolio_responses():
+    api = FakeEmptyPortfolioApi()
+
+    with pytest.raises(ValueError, match="keine auswertbaren Depotpositionen"):
+        asyncio.run(trade_republic._fetch_depot_value_summary(api))
+
+    assert api.portfolio_payloads == [
+        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
+        {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
+    ]
