@@ -1,74 +1,74 @@
-# Instructions pour l'Agent IA (Projet : TR to Actual Budget Sync)
+# AI Agent Instructions (Project: TR to Actual Budget Sync)
 
-## 🎯 Objectif du Projet
-Créer une application web conteneurisée (Docker) avec une interface utilisateur (UI) permettant de :
-1. Récupérer les transactions d'un compte Trade Republic via la librairie Python `pytr`.
-2. Afficher ces transactions clairement sur une interface web.
-3. Envoyer ces transactions vers une instance "Actual Budget".
-4. Automatiser la construction de l'image Docker via GitHub Actions (CI) et la pousser sur le GitHub Container Registry (ghcr.io).
+## 🎯 Project Goal
+Create a containerized web application (Docker) with a user interface that can:
+1. Fetch transactions from a Trade Republic account using the Python library `pytr`.
+2. Display these transactions clearly in a web interface.
+3. Send these transactions to an Actual Budget instance.
+4. Build the Docker image automatically with GitHub Actions and push it to GitHub Container Registry (ghcr.io).
 
-## 📚 Documentations et Références
-L'agent doit s'appuyer sur les documentations suivantes pour l'implémentation :
+## 📚 Documentation and References
+Use the following documentation for the implementation:
 
-*   **Trade Republic API (pytr) :**
-    *   Repo officiel : [https://github.com/pytr-org/pytr](https://github.com/pytr-org/pytr)
-*   **Actual Budget API :**
-    *   Docs Officielles (Node.js) : [https://actualbudget.org/docs/api/](https://actualbudget.org/docs/api/)
-    *   *Alternative Python (Recommandée)* `actualpy` : [https://github.com/bvanelli/actualpy](https://github.com/bvanelli/actualpy) (Permet de manipuler la BDD Actual Budget directement en Python).
-    *   *Alternative REST API* `actual-http-api` : [https://github.com/jhonderson/actual-http-api](https://github.com/jhonderson/actual-http-api)
-*   **FastAPI :** [https://fastapi.tiangolo.com/](https://fastapi.tiangolo.com/)
-*   **Docker :** [https://docs.docker.com/](https://docs.docker.com/)
-*   **GitHub Actions (CI/CD) :** [https://docs.github.com/en/actions](https://docs.github.com/en/actions)
+*   **Trade Republic API (pytr):**
+    *   Official repository: [https://github.com/pytr-org/pytr](https://github.com/pytr-org/pytr)
+*   **Actual Budget API:**
+    *   Official docs (Node.js): [https://actualbudget.org/docs/api/](https://actualbudget.org/docs/api/)
+    *   *Recommended Python alternative* `actualpy`: [https://github.com/bvanelli/actualpy](https://github.com/bvanelli/actualpy) (provides direct access to the Actual Budget database from Python).
+    *   *REST API alternative* `actual-http-api`: [https://github.com/jhonderson/actual-http-api](https://github.com/jhonderson/actual-http-api)
+*   **FastAPI:** [https://fastapi.tiangolo.com/](https://fastapi.tiangolo.com/)
+*   **Docker:** [https://docs.docker.com/](https://docs.docker.com/)
+*   **GitHub Actions (CI/CD):** [https://docs.github.com/en/actions](https://docs.github.com/en/actions)
 
-## 🛠️ Stack Technique Recommandée
-*   **Backend :** Python avec FastAPI (idéal car `pytr` est en Python, FastAPI est léger et performant).
-*   **Frontend :** HTML/CSS/JS Vanilla avec TailwindCSS (ou un framework léger). L'UI doit rester simple et servie par le backend.
-*   **Infrastructure :** Docker, GitHub Actions pour publier sur `ghcr.io`.
+## 🛠️ Recommended Stack
+*   **Backend:** Python with FastAPI.
+*   **Frontend:** Vanilla HTML/CSS/JS with TailwindCSS or a lightweight framework. Keep the UI simple and serve it from the backend.
+*   **Infrastructure:** Docker and GitHub Actions publishing to `ghcr.io`.
 
-## 📋 Tâches à réaliser (Étape par Étape)
+## 📋 Implementation Tasks
 
-### Étape 1 : Initialisation du Backend (Python/FastAPI)
-*   Mettre en place un projet FastAPI de base.
-*   Créer les routes d'API pour :
-    *   S'authentifier sur Trade Republic (gérer le login `pytr` avec numéro de téléphone et PIN/Device).
-    *   Récupérer l'historique des transactions.
-    *   S'authentifier sur Actual Budget (URL du serveur, mot de passe, Sync ID du budget).
-    *   Pousser les transactions formatées vers Actual Budget (en utilisant `actualpy` ou des requêtes HTTP).
+### Step 1: Initialize the Backend (Python/FastAPI)
+*   Set up a basic FastAPI project.
+*   Create API routes to:
+    *   Authenticate with Trade Republic using `pytr`, including phone and PIN/device login.
+    *   Fetch transaction history.
+    *   Authenticate with Actual Budget using the server URL, password, and budget sync ID.
+    *   Push formatted transactions to Actual Budget using `actualpy` or HTTP requests.
 
-### Étape 2 : Traitement de la Donnée (Mapping)
-*   Créer une fonction qui parse le JSON renvoyé par `pytr`.
-*   Filtrer les transactions annulées (ex: `"status": "CANCELED"` doivent être ignorées ou signalées visuellement).
-*   Mapper les données de Trade Republic vers le format attendu par Actual Budget :
-    *   `date` -> Date de la transaction (format YYYY-MM-DD).
-    *   `amount.value` -> Montant (Actual Budget stocke les montants en format entier/milli-cents : multiplier par 100 et traiter les décimales selon la doc API).
-    *   `title` ou `raw.title` -> Payee (Bénéficiaire).
-    *   `subtitle` -> Notes/Mémo.
+### Step 2: Process and Map Data
+*   Create a function that parses the JSON returned by `pytr`.
+*   Filter canceled transactions such as `"status": "CANCELED"` or mark them visually.
+*   Map Trade Republic data to the format expected by Actual Budget:
+    *   `date` -> transaction date in YYYY-MM-DD format.
+    *   `amount.value` -> amount in Actual Budget's integer representation.
+    *   `title` or `raw.title` -> payee.
+    *   `subtitle` -> notes/memo.
 
-### Étape 3 : Création de l'Interface Utilisateur (UI)
-*   Créer une page web simple avec un tableau de bord.
-*   **Affichage des données :** Un tableau propre listant les transactions récupérées (Date, Bénéficiaire, Montant, Statut, Catégorie TR).
-*   **Actions :**
-    *   Un bouton "Connecter Trade Republic" (avec gestion de l'invite 2FA de l'app si nécessaire).
-    *   Un bouton "Récupérer les transactions".
-    *   Un bouton "Synchroniser avec Actual Budget".
-*   Faire en sorte que l'état d'avancement et les erreurs soient visibles pour l'utilisateur (toasts ou alertes).
+### Step 3: Create the User Interface
+*   Create a simple dashboard page.
+*   **Data display:** Show fetched transactions in a clear table with date, payee, amount, status, and TR category.
+*   **Actions:**
+    *   A "Connect Trade Republic" button with 2FA support when needed.
+    *   A "Fetch transactions" button.
+    *   A "Sync with Actual Budget" button.
+*   Make progress and errors visible through notifications or alerts.
 
-### Étape 4 : Dockerisation
-*   Écrire un `Dockerfile` (basé sur `python:3.11-slim`).
-*   Installer les dépendances via `requirements.txt` (FastAPI, uvicorn, pytr, actualpy, etc.).
-*   Exposer le port de l'application (ex: 8000).
-*   S'assurer que les variables d'environnement (identifiants, tokens) ne sont pas hardcodées.
+### Step 4: Dockerize
+*   Write a `Dockerfile` based on `python:3.11-slim`.
+*   Install dependencies from `requirements.txt`.
+*   Expose the application port, such as 8000.
+*   Ensure credentials and tokens come from environment variables.
 
-### Étape 5 : Intégration Continue (GitHub Actions)
-*   Créer un fichier `.github/workflows/docker-publish.yml`.
-*   Le workflow doit se déclencher lors d'un `push` sur la branche `main`.
-*   Il doit builder l'image Docker, se connecter au GitHub Container Registry (`ghcr.io`) via `GITHUB_TOKEN`, puis tagger et pousser l'image.
+### Step 5: Continuous Integration (GitHub Actions)
+*   Create `.github/workflows/docker-publish.yml`.
+*   Trigger the workflow on pushes to `main`.
+*   Build and tag the Docker image, authenticate to `ghcr.io` with `GITHUB_TOKEN`, and push it.
 
 ---
 
-## 📄 Données de Référence (Payload `pytr`)
+## 📄 Reference Data (`pytr` Payload)
 
-Voici la structure exacte des transactions récupérées via `pytr` que le backend devra parser :
+The backend should parse this transaction structure returned by `pytr`:
 ```json
 [
   {
@@ -128,14 +128,14 @@ Voici la structure exacte des transactions récupérées via `pytr` que le backe
 ]
 ```
 
-Règles de parsing spécifiques :
+Specific parsing rules:
 
-    Ne traiter que les transactions où "status" == "EXECUTED". Ignorer "CANCELED".
+    Process only transactions where "status" == "EXECUTED". Ignore "CANCELED".
 
-    Utiliser title ou raw.title pour le nom du bénéficiaire.
+    Use title or raw.title for the payee name.
 
-    La propriété raw.eventType ou type permet de distinguer les paiements par carte (CARD_TRANSACTION) des investissements programmés (TRADING_SAVINGSPLAN_EXECUTED).
+    Use raw.eventType or type to distinguish card payments (CARD_TRANSACTION) from scheduled investments (TRADING_SAVINGSPLAN_EXECUTED).
 
-🚀 Lancement de la génération
+🚀 Start Implementation
 
-Agent, veuillez lire ces instructions et commencer par me proposer la structure de dossiers du projet, puis implémenter l'étape 1 et 2 en premier. Demandez-moi de valider avant de passer à l'UI et au déploiement Docker.
+Read these instructions, propose the project directory structure, and implement steps 1 and 2 first. Ask for validation before proceeding to the UI and Docker deployment.

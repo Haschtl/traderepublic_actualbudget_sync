@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import List, Dict, Any
 
 from app.core.config import settings
+from app.core.i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -254,20 +255,17 @@ def _create_or_link_transfer(
 
 
 def list_budget_files() -> List[Dict[str, Any]]:
-    """Retourne la liste des fichiers budgets disponibles sur le serveur Actual.
-
-    Utile pour trouver le bon ACTUAL_BUDGET_ID / ACTUAL_ACCOUNT_NAME.
-    """
+    """Return budget files available on the Actual server."""
     try:
         from actual import Actual
     except ImportError as e:
-        raise NotImplementedError("Le package 'actualpy' est requis. Erreur: %s" % e)
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré.")
+        raise NotImplementedError(tr("actual.url_missing"))
 
     with Actual(base_url=url, password=password or None) as actual:
         files = actual.list_user_files()
@@ -285,18 +283,14 @@ def list_budget_files() -> List[Dict[str, Any]]:
 
 
 def encrypt_budget() -> Dict[str, Any]:
-    """Active le chiffrement du budget Actual configuré.
-
-    Cette opération utilise ACTUAL_ENCRYPTION_PASSWORD comme mot de passe
-    de chiffrement du fichier budget, distinct du mot de passe serveur.
-    """
+    """Enable encryption for the configured Actual budget."""
     if settings.app_mode == "mock":
         return {"status": "mocked", "encrypted": True}
 
     try:
         from actual import Actual
     except ImportError as e:
-        raise NotImplementedError("Le package 'actualpy' est requis. Erreur: %s" % e)
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
@@ -304,14 +298,11 @@ def encrypt_budget() -> Dict[str, Any]:
     encryption_password = settings.actual_encryption_password
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.url_missing"))
     if not budget_id:
-        raise NotImplementedError("ACTUAL_BUDGET_ID non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.budget_id_missing"))
     if not encryption_password:
-        raise NotImplementedError(
-            "ACTUAL_ENCRYPTION_PASSWORD non configuré. "
-            "Définissez-le avant d'activer le chiffrement du budget."
-        )
+        raise NotImplementedError(tr("actual.encryption_password_missing"))
 
     with Actual(
         base_url=url,
@@ -380,9 +371,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
         from actual import Actual
         from actual.queries import get_account
     except ImportError as e:
-        raise NotImplementedError(
-            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
@@ -391,7 +380,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
     transfer_account_name = settings.actual_transfer_account_name
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_URL"))
 
     matched = 0
     duplicates = 0
@@ -561,9 +550,7 @@ def reset_imported_transactions(dry_run: bool = True) -> Dict[str, Any]:
         from actual.queries import get_account
         from sqlmodel import select
     except ImportError as e:
-        raise NotImplementedError(
-            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
@@ -571,7 +558,7 @@ def reset_imported_transactions(dry_run: bool = True) -> Dict[str, Any]:
     budget_id = settings.actual_budget_id
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_URL"))
 
     with Actual(
         base_url=url,
@@ -729,9 +716,7 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
         from sqlalchemy import func
         from sqlmodel import select
     except ImportError as e:
-        raise NotImplementedError(
-            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
@@ -740,9 +725,9 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
     depot_account_name = settings.actual_depot_account_name
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_URL"))
     if not depot_account_name:
-        raise NotImplementedError("ACTUAL_DEPOT_ACCOUNT_NAME non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_DEPOT_ACCOUNT_NAME"))
 
     with Actual(
         base_url=url,
@@ -810,18 +795,7 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
 
 
 def push_transactions(transactions: List[Dict]) -> Dict:
-    """Pousse les transactions mappées vers Actual Budget.
-
-    - En `APP_MODE=mock` : simule l'envoi, retourne un résumé.
-    - En mode production : utilise `actualpy` (pip install actualpy).
-
-    Variables d'environnement requises :
-        ACTUAL_URL          URL du serveur Actual (ex : http://localhost:5006)
-        ACTUAL_PASSWORD     Mot de passe Actual
-        ACTUAL_ENCRYPTION_PASSWORD Mot de passe de chiffrement du budget (si activé)
-        ACTUAL_BUDGET_ID    ID ou nom du budget (fichier)
-        ACTUAL_ACCOUNT_NAME Nom du compte dans le budget (ex : "Trade Republic")
-    """
+    """Push mapped transactions to Actual Budget."""
     if settings.app_mode == "mock":
         return {
             "status": "mocked",
@@ -845,9 +819,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
         from actual import Actual
         from actual.queries import get_or_create_account, reconcile_transaction
     except ImportError as e:
-        raise NotImplementedError(
-            "Le package 'actualpy' est requis. Installez-le: pip install actualpy. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("actual.package_required", error=e))
 
     url = settings.actual_url
     password = settings.actual_password
@@ -858,12 +830,9 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     transfer_account_name = settings.actual_transfer_account_name
 
     if not url:
-        raise NotImplementedError("ACTUAL_URL non configuré. Ajoutez-le à votre .env.")
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_URL"))
     if not cash_account_name:
-        raise NotImplementedError(
-            "ACTUAL_CASH_ACCOUNT_NAME non configuré. "
-            "Indiquez le nom exact du compte cash Actual cible dans votre .env."
-        )
+        raise NotImplementedError(tr("actual.setting_missing", setting="ACTUAL_CASH_ACCOUNT_NAME"))
 
     inserted = 0
     skipped = 0
@@ -897,7 +866,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
             for tx in transactions:
                 date_str = tx.get("date") or ""
                 if not date_str:
-                    log.warning("Transaction sans date ignorée: %s", tx)
+                    log.warning("Skipping transaction without a date: %s", tx)
                     skipped += 1
                     report.append({
                         "source_id": tx.get("source_id"),
@@ -910,7 +879,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                 try:
                     date = datetime.date.fromisoformat(date_str)
                 except ValueError:
-                    log.warning("Date invalide '%s', transaction ignorée", date_str)
+                    log.warning("Skipping transaction with invalid date '%s'", date_str)
                     skipped += 1
                     report.append({
                         "source_id": tx.get("source_id"),
@@ -923,8 +892,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
 
                 payee = tx.get("payee") or "(unknown)"
                 notes = tx.get("memo") or ""
-                # Le mapper stocke les montants en centimes (int).
-                # actualpy attend des euros (float) → on divise par 100.
+                # The mapper stores integer cents; actualpy expects floating-point euros.
                 amount_eur = (tx.get("amount") or 0) / 100
                 imported_id = tx.get("source_id") or None
                 cleared = bool(tx.get("cleared"))
@@ -946,7 +914,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             )
                         if duplicate_match is not None:
                             duplicates += 1
-                            log.debug("Transfert doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            log.debug("Skipping duplicate transfer (imported_id=%s)", imported_id)
                             report.append({
                                 "source_id": imported_id,
                                 "date": date_str,
@@ -987,7 +955,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         })
                         if linked_existing:
                             log.info(
-                                "Transfert lié à une transaction existante du compte opposé (imported_id=%s)",
+                                "Linked transfer to an existing transaction in the counter-account (imported_id=%s)",
                                 imported_id,
                             )
                         continue
@@ -1004,7 +972,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             )
                         if duplicate_match is not None:
                             duplicates += 1
-                            log.debug("Trade-Transfer doublon détecté et ignoré (imported_id=%s)", imported_id)
+                            log.debug("Skipping duplicate trade transfer (imported_id=%s)", imported_id)
                             report.append({
                                 "source_id": imported_id,
                                 "date": date_str,
@@ -1059,8 +1027,8 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                     result_tx.cleared = int(cleared)
                     already_matched.append(result_tx)
 
-                    # Si la transaction est dans session.new, elle vient d'être créée.
-                    # Sinon, c'était un match existant (doublon).
+                    # Transactions in session.new were just created; otherwise an
+                    # existing transaction was reconciled as a duplicate.
                     if result_tx in session.new:
                         inserted += 1
                         report.append({
@@ -1074,7 +1042,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         })
                     else:
                         duplicates += 1
-                        log.debug("Doublon détecté et ignoré (imported_id=%s)", imported_id)
+                        log.debug("Skipping duplicate transaction (imported_id=%s)", imported_id)
                         report.append({
                             "source_id": imported_id,
                             "date": date_str,
@@ -1086,7 +1054,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                         })
 
                 except Exception as e:
-                    log.error("Erreur lors du reconcile de la transaction %s: %s", imported_id, e)
+                    log.error("Failed to reconcile transaction %s: %s", imported_id, e)
                     errors.append({"source_id": imported_id, "error": str(e)})
                     report.append({
                         "source_id": imported_id,
@@ -1103,7 +1071,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
     except NotImplementedError:
         raise
     except Exception as e:
-        # Tenter de lister les fichiers disponibles pour un meilleur diagnostic
+        # List files to provide a more useful diagnostic.
         available = []
         try:
             available = list_budget_files()
@@ -1113,15 +1081,11 @@ def push_transactions(transactions: List[Dict]) -> Dict:
         hint = ""
         if available:
             names = [f"{f['name']} (file_id={f['file_id']})" for f in available]
-            hint = " Fichiers disponibles sur le serveur : " + ", ".join(names) + "."
+            hint = tr("actual.files_available", files=", ".join(names))
         else:
-            hint = " Appelez GET /actual/files pour lister les budgets disponibles."
+            hint = tr("actual.files_hint")
 
-        raise NotImplementedError(
-            "Impossible de se connecter à Actual Budget ou de trouver le fichier budget. "
-            "Vérifiez ACTUAL_URL, ACTUAL_PASSWORD, ACTUAL_BUDGET_ID (nom ou file_id exact), ACTUAL_ACCOUNT_NAME."
-            "%s Erreur originale: %s" % (hint, e)
-        )
+        raise NotImplementedError(tr("actual.connection_failed", hint=hint, error=e))
 
     result: Dict = {
         "status": "ok",

@@ -215,6 +215,30 @@
         font-weight: 750;
       }
 
+      .language-switch {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        margin-bottom: 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--bg);
+      }
+
+      .language-switch button {
+        min-width: 38px;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: var(--muted);
+        background: transparent;
+      }
+
+      .language-switch button.active {
+        color: var(--text);
+        background: #ffffff;
+        border-color: var(--line);
+      }
+
       .metric-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -377,100 +401,102 @@
       <header>
         <div>
           <h1>Trade Republic Actual Sync</h1>
-          <p class="subtitle">Trade Republic verbinden, aktuelle Buchungen synchronisieren oder gezielt historische Daten nach Actual Budget importieren.</p>
+          <p class="subtitle" data-i18n="app.subtitle">Trade Republic verbinden, aktuelle Buchungen synchronisieren oder gezielt historische Daten nach Actual Budget importieren.</p>
         </div>
         <div class="panel session-card">
-          <div class="session-label">Trade Republic Session</div>
-          <div id="session-info" class="session-value">Keine Session aktiv</div>
-          <div id="session-validity" class="session-label" style="margin-top: 6px;">Status unbekannt</div>
-          <div id="last-sync-info" class="session-label" style="margin-top: 6px;">Noch kein Sync bekannt</div>
-          <button id="btn-clear-session" class="secondary" style="margin-top: 10px;">Session vergessen</button>
+          <div class="language-switch" role="group" data-i18n-aria-label="language.label">
+            <button type="button" data-language="de" aria-pressed="true">DE</button>
+            <button type="button" data-language="en" aria-pressed="false">EN</button>
+          </div>
+          <div class="session-label" data-i18n="session.label">Trade Republic Session</div>
+          <div id="session-info" class="session-value" data-i18n="session.none">Keine Session aktiv</div>
+          <div id="session-validity" class="session-label" style="margin-top: 6px;" data-i18n="session.validity.unknown">Sessionstatus unbekannt</div>
+          <div id="last-sync-info" class="session-label" style="margin-top: 6px;" data-i18n="session.sync.none">Noch kein Sync bekannt</div>
+          <button id="btn-clear-session" class="secondary" style="margin-top: 10px;" data-i18n="session.forget">Session vergessen</button>
         </div>
       </header>
 
       <section id="status" class="status info" aria-live="polite">
-        <div class="status-title">Bereit</div>
-        <div class="status-body">Starte mit dem Trade-Republic-Login oder führe einen Sync mit einer vorhandenen Session aus.</div>
+        <div class="status-title" data-i18n="ready.title">Bereit</div>
+        <div class="status-body" data-i18n="ready.body">Starte mit dem Trade-Republic-Login oder führe einen Sync mit einer vorhandenen Session aus.</div>
       </section>
 
       <section class="grid" style="margin-top: 16px;">
         <div class="panel span-4 stack">
           <div>
-            <h2>1. Verbinden</h2>
-            <p class="muted">Startet den Login und speichert die Session-ID lokal im Browser.</p>
+            <h2 data-i18n="connect.title">1. Verbinden</h2>
+            <p class="muted" data-i18n="connect.body">Startet den Login und speichert die Session-ID lokal im Browser.</p>
           </div>
           <div class="toolbar">
-            <button id="btn-connect" class="primary">TR Login starten</button>
+            <button id="btn-connect" class="primary" data-i18n="connect.start">TR Login starten</button>
           </div>
           <div class="field-row">
-            <label>
-              Code / PIN
-              <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Code eingeben" />
+            <label><span data-i18n="connect.code">Code / PIN</span>
+              <input id="otp" type="text" inputmode="numeric" autocomplete="one-time-code" placeholder="Code eingeben" data-i18n-placeholder="connect.codePlaceholder" />
             </label>
-            <label>
-              Aktion
-              <button id="btn-complete" class="secondary">Code bestätigen</button>
+            <label><span data-i18n="connect.action">Aktion</span>
+              <button id="btn-complete" class="secondary" data-i18n="connect.confirm">Code bestätigen</button>
             </label>
           </div>
         </div>
 
         <div class="panel span-8 stack">
           <div>
-            <h2>2. Synchronisieren</h2>
-            <p class="muted">Erst Daten aus Trade Republic oder CSV importieren und prüfen, danach genau diesen Preview-Stand nach Actual Budget pushen.</p>
+            <h2 data-i18n="sync.title">2. Synchronisieren</h2>
+            <p class="muted" data-i18n="sync.body">Erst Daten aus Trade Republic oder CSV importieren und prüfen, danach genau diesen Preview-Stand nach Actual Budget pushen.</p>
           </div>
           <div class="toolbar">
-            <button id="btn-map" class="secondary">TR-Import</button>
-            <button id="btn-csv-preview" class="secondary" type="button">CSV-Import</button>
-            <button id="btn-sync" class="primary" disabled>Zu Actual pushen</button>
+            <button id="btn-map" class="secondary" data-i18n="sync.trImport">TR-Import</button>
+            <button id="btn-csv-preview" class="secondary" type="button" data-i18n="sync.csvImport">CSV-Import</button>
+            <button id="btn-sync" class="primary" disabled data-i18n="sync.push">Zu Actual pushen</button>
           </div>
           <input id="csv-file" type="file" accept=".csv,text/csv" hidden />
           <div class="field-row">
-            <label>
-              History von
+            <label><span data-i18n="sync.historyFrom">History von</span>
               <input id="history-from" type="date" />
             </label>
-            <label>
-              History bis
+            <label><span data-i18n="sync.historyTo">History bis</span>
               <input id="history-to" type="date" />
             </label>
           </div>
+        </div>
+
+        <div class="panel span-12">
+          <h2 data-i18n="depot.title">3. Depotwert angleichen</h2>
           <div class="field-row">
-            <label>
-              Aktueller TR-Depotwert
-              <input id="depot-target-value" type="text" inputmode="decimal" placeholder="z.B. 3000,00" />
+            <label><span data-i18n="sync.portfolioValue">Aktueller TR-Depotwert</span>
+              <input id="depot-target-value" type="text" inputmode="decimal" placeholder="z.B. 3000,00" data-i18n-placeholder="sync.portfolioPlaceholder" />
             </label>
-            <label>
-              Depot-Saldo
+            <label><span data-i18n="sync.portfolioBalance">Depot-Saldo</span>
               <span class="toolbar">
-                <button id="btn-load-depot-value" class="secondary" type="button">TR-Wert laden</button>
-                <button id="btn-depot-adjustment" class="secondary" type="button">Depotwert angleichen</button>
+                <button id="btn-load-depot-value" class="secondary" type="button" data-i18n="sync.loadValue">TR-Wert laden</button>
+                <button id="btn-depot-adjustment" class="secondary" type="button" data-i18n="sync.adjustValue">Depotwert angleichen</button>
               </span>
             </label>
           </div>
         </div>
 
         <div class="panel span-12">
-          <h2>Letztes Ergebnis</h2>
+          <h2 data-i18n="results.title">Letztes Ergebnis</h2>
           <div class="metric-grid">
             <div class="metric">
-              <span>Abgerufen</span>
+              <span data-i18n="results.fetched">Abgerufen</span>
               <strong id="metric-fetched">0</strong>
             </div>
             <div class="metric">
-              <span>Gemappt</span>
+              <span data-i18n="results.mapped">Gemappt</span>
               <strong id="metric-mapped">0</strong>
             </div>
             <div class="metric">
-              <span>Importiert</span>
+              <span data-i18n="results.imported">Importiert</span>
               <strong id="metric-inserted">0</strong>
             </div>
             <div class="metric">
-              <span>Duplikate</span>
+              <span data-i18n="results.duplicates">Duplikate</span>
               <strong id="metric-duplicates">0</strong>
             </div>
             <div class="metric">
-              <span>Transfer-Matches</span>
+              <span data-i18n="results.matches">Transfer-Matches</span>
               <strong id="metric-transfer-matches">0</strong>
             </div>
           </div>
@@ -478,58 +504,62 @@
 
         <div class="span-12">
           <div class="panel" style="margin-bottom: 10px;">
-            <h2>Import-Plan</h2>
+            <h2 data-i18n="preview.title">Import-Plan</h2>
             <div id="preview-summary" class="summary-list"></div>
             <div style="overflow:auto; margin-top: 12px;">
               <table>
                 <thead>
                   <tr>
-                    <th>Datum</th>
-                    <th>Payee</th>
-                    <th>EventType</th>
-                    <th>Account</th>
-                    <th>Aktion</th>
-                    <th>Betrag</th>
+                    <th data-i18n="preview.date">Datum</th>
+                    <th data-i18n="preview.payee">Payee</th>
+                    <th data-i18n="preview.eventType">EventType</th>
+                    <th data-i18n="preview.account">Account</th>
+                    <th data-i18n="preview.action">Aktion</th>
+                    <th data-i18n="preview.amount">Betrag</th>
                   </tr>
                 </thead>
                 <tbody id="preview-table">
-                  <tr><td colspan="6" class="muted">Noch kein Mapping erstellt.</td></tr>
+                  <tr><td colspan="6" class="muted" data-i18n="preview.empty">Noch kein Mapping erstellt.</td></tr>
                 </tbody>
               </table>
             </div>
           </div>
           <details>
-            <summary>Trade Republic Raw-Daten</summary>
+            <summary data-i18n="details.raw">Trade Republic Raw-Daten</summary>
             <pre id="raw">[]</pre>
           </details>
           <details>
-            <summary>Actual Mapping Preview</summary>
+            <summary data-i18n="details.mapping">Actual Mapping Preview</summary>
             <pre id="mapped">[]</pre>
           </details>
           <details>
-            <summary>Letzte API-Antwort</summary>
+            <summary data-i18n="details.response">Letzte API-Antwort</summary>
             <pre id="last-response">{}</pre>
           </details>
           <details open>
-            <summary>Import-Report</summary>
+            <summary data-i18n="details.report">Import-Report</summary>
             <pre id="import-report">[]</pre>
           </details>
           <div class="panel" style="margin-top: 10px;">
-            <h2>Wartung</h2>
-            <p class="muted" style="margin-bottom: 12px;">Reset nur verwenden, wenn du importierte Trade-Republic-Buchungen aus Actual entfernen und danach sauber neu importieren willst.</p>
+            <h2 data-i18n="maintenance.title">Wartung</h2>
+            <p class="muted" style="margin-bottom: 12px;" data-i18n="maintenance.body">Reset nur verwenden, wenn du importierte Trade-Republic-Buchungen aus Actual entfernen und danach sauber neu importieren willst.</p>
             <div class="toolbar">
-              <button id="btn-reset-preview" class="secondary" type="button">Reset prüfen</button>
-              <button id="btn-reset-run" class="danger" type="button">TR-Import zurücksetzen</button>
+              <button id="btn-reset-preview" class="secondary" type="button" data-i18n="maintenance.check">Reset prüfen</button>
+              <button id="btn-reset-run" class="danger" type="button" data-i18n="maintenance.reset">TR-Import zurücksetzen</button>
             </div>
           </div>
         </div>
       </section>
     </main>
 
+    <script src="/static/i18n.js"></script>
     <script>
       let currentSessionId = localStorage.getItem('tr_session_id') || null
       let lastRawTransactions = []
       let lastMappedTransactions = []
+      let lastPreview = null
+      let lastServerStatus = null
+      const t = window.i18n.t
 
       const buttons = Array.from(document.querySelectorAll('button'))
 
@@ -546,12 +576,12 @@
         if (sid) localStorage.setItem('tr_session_id', sid)
         else localStorage.removeItem('tr_session_id')
         document.getElementById('session-info').textContent =
-          sid ? `Aktiv: ${sid.substring(0, 8)}...` : 'Keine Session aktiv'
+          sid ? t('session.active', { id: sid.substring(0, 8) }) : t('session.none')
       }
 
       async function restoreSessionFromServer() {
         try {
-          const res = await fetch('/tr/status')
+          const res = await fetch('/tr/status', { headers: { 'Accept-Language': window.i18n.language } })
           if (!res.ok) return
           const data = await res.json()
           const sessions = data.sessions || {}
@@ -559,8 +589,12 @@
           renderServerStatus(data)
           if (preferred) {
             setSessionId(preferred)
-            const status = sessions[preferred]?.status || 'unbekannt'
-            setStatus('Session wiederhergestellt', `Backend-Session ${preferred.substring(0, 8)}... ist ${status}.`, 'success')
+            const status = sessions[preferred]?.status || t('common.unknown')
+            setStatus(
+              t('session.restored.title'),
+              t('session.restored.body', { id: preferred.substring(0, 8), status }),
+              'success'
+            )
           }
         } catch (error) {
           // Best-effort restore only. Keep the UI usable if status is protected or unavailable.
@@ -568,22 +602,23 @@
       }
 
       function renderServerStatus(data) {
+        lastServerStatus = data
         const validity = data.session_validity || 'unknown'
         const validityText = {
-          valid: 'Session gültig',
-          expired: 'Session abgelaufen, neu verbinden nötig',
-          mock: 'Mock-Session aktiv',
-          none: 'Keine Backend-Session',
-          unknown: 'Sessionstatus unbekannt'
-        }[validity] || `Sessionstatus: ${validity}`
+          valid: t('session.validity.valid'),
+          expired: t('session.validity.expired'),
+          mock: t('session.validity.mock'),
+          none: t('session.validity.none'),
+          unknown: t('session.validity.unknown')
+        }[validity] || t('session.validity.other', { status: validity })
         document.getElementById('session-validity').textContent = validityText
 
         const state = data.sync_state || {}
         const last = state.last_successful_sync_at || state.last_sync_at
         const error = state.last_sync_error
         document.getElementById('last-sync-info').textContent = error
-          ? `Letzter Sync fehlgeschlagen: ${error}`
-          : (last ? `Letzter erfolgreicher Sync: ${last}` : 'Noch kein Sync bekannt')
+          ? t('session.sync.failed', { error })
+          : (last ? t('session.sync.success', { date: last }) : t('session.sync.none'))
       }
 
       function setStatus(title, body = '', type = 'info') {
@@ -620,18 +655,19 @@
       }
 
       function renderPreview(preview) {
+        lastPreview = preview
         const summary = document.getElementById('preview-summary')
         const table = document.getElementById('preview-table')
         if (!preview) {
           summary.innerHTML = ''
-          table.innerHTML = '<tr><td colspan="6" class="muted">Preview nicht verfügbar.</td></tr>'
+          table.innerHTML = `<tr><td colspan="6" class="muted">${escapeHtml(t('preview.unavailable'))}</td></tr>`
           return
         }
 
         summary.innerHTML = [
-          renderSummaryBox('Nach Account', preview.by_account),
-          renderSummaryBox('Nach EventType', preview.by_event_type),
-          renderSummaryBox('Geplante Aktionen', preview.actions),
+          renderSummaryBox(t('preview.byAccount'), preview.by_account),
+          renderSummaryBox(t('preview.byEvent'), preview.by_event_type),
+          renderSummaryBox(t('preview.plannedActions'), preview.actions),
         ].join('')
 
         const rows = (preview.report || []).slice(0, 200).map((item) => {
@@ -652,9 +688,9 @@
             : (searchedWithoutMatch ? formatUnmatchedTransferTooltip(item) : '')
           const tooltip = tooltipText ? ` title="${escapeAttr(tooltipText)}"` : ''
           const action = hasActualMatch
-            ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">Actual-Match</span>`
+            ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">${escapeHtml(t('preview.actualMatch'))}</span>`
             : (searchedWithoutMatch
-              ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">Kein Match</span>`
+              ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">${escapeHtml(t('preview.noMatch'))}</span>`
               : escapeHtml(item.planned_action || ''))
           return `
             <tr${rowClass}${tooltip}>
@@ -668,35 +704,35 @@
           `
         }).join('')
 
-        table.innerHTML = rows || '<tr><td colspan="6" class="muted">Keine importierbaren Buchungen gefunden.</td></tr>'
+        table.innerHTML = rows || `<tr><td colspan="6" class="muted">${escapeHtml(t('preview.noTransactions'))}</td></tr>`
       }
 
       function formatActualMatchTooltip(match) {
         const amount = typeof match.amount === 'number' ? match.amount.toFixed(2) : ''
         return [
-          'Match in Actual Budget',
-          match.date ? `Datum: ${match.date}` : null,
-          match.account ? `Account: ${match.account}` : null,
-          match.payee ? `Payee: ${match.payee}` : null,
-          amount ? `Betrag: ${amount}` : null,
-          match.imported_description ? `Import-Text: ${match.imported_description}` : null,
-          match.notes ? `Notes: ${match.notes}` : null,
-          match.financial_id ? `Financial ID: ${match.financial_id}` : null,
+          t('tooltip.matchTitle'),
+          match.date ? t('tooltip.date', { value: match.date }) : null,
+          match.account ? t('tooltip.account', { value: match.account }) : null,
+          match.payee ? t('tooltip.payee', { value: match.payee }) : null,
+          amount ? t('tooltip.amount', { value: amount }) : null,
+          match.imported_description ? t('tooltip.importText', { value: match.imported_description }) : null,
+          match.notes ? t('tooltip.notes', { value: match.notes }) : null,
+          match.financial_id ? t('tooltip.financialId', { value: match.financial_id }) : null,
         ].filter(Boolean).join('\n')
       }
 
       function formatUnmatchedTransferTooltip(item) {
         const actionText = {
-          create_external_transfer_pair: 'Kein bestehender Transfer gefunden. Es wird ein neues Transfer-Paar zwischen Trade Republic Cash und dem konfigurierten Gegenkonto angelegt.',
-          import_cash_without_counterpart: 'Kein bestehender Transfer gefunden. Es wird defaultmäßig kein Gegenbuchungs-Transfer erstellt; importiert wird nur die Trade-Republic-Cash-Buchung als einfache Transaktion.',
-          duplicate: 'Diese Buchung ist ein Duplikat und wird nicht erneut importiert.',
-        }[item.planned_action] || `Kein bestehender Transfer gefunden. Geplante Aktion: ${item.planned_action || 'unbekannt'}.`
+          create_external_transfer_pair: t('tooltip.createPair'),
+          import_cash_without_counterpart: t('tooltip.cashOnly'),
+          duplicate: t('tooltip.duplicate'),
+        }[item.planned_action] || t('tooltip.unknownAction', { action: item.planned_action || t('common.unknown') })
 
         return [
-          'Kein Transfer-Match in Actual gefunden',
-          item.transfer_account ? `Gesuchtes Gegenkonto: ${item.transfer_account}` : null,
-          item.date ? `TR-Datum: ${item.date}` : null,
-          typeof item.amount === 'number' ? `TR-Betrag: ${(item.amount / 100).toFixed(2)}` : null,
+          t('tooltip.unmatchedTitle'),
+          item.transfer_account ? t('tooltip.counterAccount', { value: item.transfer_account }) : null,
+          item.date ? t('tooltip.trDate', { value: item.date }) : null,
+          typeof item.amount === 'number' ? t('tooltip.trAmount', { value: (item.amount / 100).toFixed(2) }) : null,
           actionText,
         ].filter(Boolean).join('\n')
       }
@@ -706,12 +742,16 @@
           .sort((a, b) => b[1] - a[1])
           .map(([key, value]) => `<li>${escapeHtml(key)}: <strong>${escapeHtml(value)}</strong></li>`)
           .join('')
-        return `<div class="summary-box"><h3>${escapeHtml(title)}</h3><ul>${items || '<li>Keine</li>'}</ul></div>`
+        return `<div class="summary-box"><h3>${escapeHtml(title)}</h3><ul>${items || `<li>${escapeHtml(t('preview.none'))}</li>`}</ul></div>`
       }
 
       async function requestJson(url, options = {}) {
         setBusy(true)
         try {
+          options.headers = {
+            'Accept-Language': window.i18n.language,
+            ...(options.headers || {})
+          }
           const res = await fetch(url, options)
           const data = await res.json().catch(() => ({}))
           writeJson('last-response', data)
@@ -734,20 +774,23 @@
         const fromDate = document.getElementById('history-from').value
         const toDate = document.getElementById('history-to').value
         if (fromDate && toDate && fromDate > toDate) {
-          throw new Error('History von muss vor History bis liegen.')
+          throw new Error(t('history.invalidRange'))
         }
 
         const payload = sessionPayload()
         let url = '/tr/fetch'
-        let bodyText = 'Trade Republic Timeline wird geladen...'
+        let bodyText = t('history.timeline')
         if (fromDate || toDate) {
           url = '/tr/fetch-history'
           if (fromDate) payload.from_date = fromDate
           if (toDate) payload.to_date = toDate
-          bodyText = `Trade Republic Historie wird geladen: ${fromDate || 'Anfang'} bis ${toDate || 'heute'}`
+          bodyText = t('history.range', {
+            from: fromDate || t('history.beginning'),
+            to: toDate || t('history.today')
+          })
         }
 
-        setStatus('TR-Import läuft', bodyText)
+        setStatus(t('import.running'), bodyText)
         const data = await requestJson(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -760,14 +803,18 @@
         updateMetrics({ fetched: data.count || lastRawTransactions.length })
         await previewMap(lastRawTransactions)
         const fetchMeta = data.fetch_meta
-          ? ` Aus ${data.fetch_meta.pages_read ?? 0} TR-Seite(n).`
+          ? t('import.pages', { count: data.fetch_meta.pages_read ?? 0 })
           : ''
-        setStatus('TR-Import vorbereitet', `${data.count || lastRawTransactions.length} Buchungen geladen und gemappt.${fetchMeta}`, 'success')
+        setStatus(
+          t('import.prepared.title'),
+          t('import.prepared.body', { count: data.count || lastRawTransactions.length, pages: fetchMeta }),
+          'success'
+        )
         return lastMappedTransactions
       }
 
       async function previewMap(transactions) {
-        setStatus('Mapping wird erstellt', 'Die geladenen TR-Daten werden ins Actual-Format übersetzt...')
+        setStatus(t('mapping.running'), t('mapping.runningBody'))
         const data = await requestJson('/tr/map', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -779,9 +826,16 @@
         updateMetrics({ mapped: lastMappedTransactions.length })
         const preview = await previewImport(lastMappedTransactions)
         const transferText = preview
-          ? `${preview.matched_existing_counterpart}/${preview.external_transfers} externe Transfers mit bestehender Gegenbuchung gefunden.`
-          : 'Actual-Preview nicht verfügbar.'
-        setStatus('Mapping erstellt', `${lastMappedTransactions.length} Buchungen im Actual-Format. ${transferText}`, 'success')
+          ? t('mapping.transfers', {
+              matched: preview.matched_existing_counterpart,
+              total: preview.external_transfers
+            })
+          : t('mapping.previewUnavailable')
+        setStatus(
+          t('mapping.done'),
+          t('mapping.doneBody', { count: lastMappedTransactions.length, transfers: transferText }),
+          'success'
+        )
         return lastMappedTransactions
       }
 
@@ -805,13 +859,13 @@
       }
 
       async function readCsvFile(file) {
-        if (!file) throw new Error('Bitte zuerst eine Trade-Republic-CSV auswählen.')
+        if (!file) throw new Error(t('csv.select'))
         return await file.text()
       }
 
       async function previewCsv(file) {
         const csv = await readCsvFile(file)
-        setStatus('CSV wird gelesen', 'Trade-Republic-Export wird geparst und gemappt...')
+        setStatus(t('csv.reading'), t('csv.readingBody'))
         const data = await requestJson('/tr/csv/preview', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -822,7 +876,7 @@
         updatePushButton()
         writeJson('raw', lastRawTransactions)
         writeJson('mapped', lastMappedTransactions)
-        writeJson('import-report', data.preview?.report || [{ action: 'preview_unavailable', error: data.preview_error || 'Actual-Preview nicht verfügbar' }])
+        writeJson('import-report', data.preview?.report || [{ action: 'preview_unavailable', error: data.preview_error || t('mapping.previewUnavailable') }])
         updateMetrics({ fetched: data.count || lastRawTransactions.length, mapped: data.mapped_count || lastMappedTransactions.length })
         if (data.preview) {
           document.getElementById('metric-transfer-matches').textContent = data.preview.matched_existing_counterpart ?? 0
@@ -832,8 +886,8 @@
           renderPreview(null)
         }
         setStatus(
-          'CSV vorbereitet',
-          `${data.count || 0} CSV-Zeilen gelesen, ${data.mapped_count || 0} Buchungen fürs Actual-Format vorbereitet.`,
+          t('csv.prepared'),
+          t('csv.preparedBody', { rows: data.count || 0, mapped: data.mapped_count || 0 }),
           'success'
         )
         return data
@@ -841,34 +895,30 @@
 
       async function pushMapped() {
         if (!lastMappedTransactions.length) {
-          throw new Error('Bitte zuerst TR-Import & Preview oder CSV-Import & Preview ausführen.')
+          throw new Error(t('push.noData'))
         }
-        const confirmed = confirm(`${lastMappedTransactions.length} gemappte Buchungen jetzt nach Actual Budget pushen?`)
+        const confirmed = confirm(t('push.confirm', { count: lastMappedTransactions.length }))
         if (!confirmed) return null
-        setStatus('Push läuft', 'Der aktuelle Mapping-Preview wird nach Actual Budget übertragen...')
+        setStatus(t('push.running'), t('push.runningBody'))
         const data = await requestJson('/tr/push-mapped', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(lastMappedTransactions)
         })
         updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
-        setStatus('Push abgeschlossen', summarizePush(data), 'success')
+        setStatus(t('push.done'), summarizePush(data), 'success')
         restoreSessionFromServer()
         return data
       }
 
       async function resetTradeRepublicImport(dryRun) {
         if (!dryRun) {
-          const confirmed = confirm(
-            'Importierte Buchungen in den Trade-Republic-Cash/Depot-Accounts löschen und gematchte externe Gegenbuchungen entlinken? Bitte vorher "Reset prüfen" ausführen.'
-          )
+          const confirmed = confirm(t('reset.confirm'))
           if (!confirmed) return null
         }
         setStatus(
-          dryRun ? 'Reset wird geprüft' : 'Reset läuft',
-          dryRun
-            ? 'Actual wird gelesen; es wird noch nichts geändert.'
-            : 'Importierte TR-Zeilen werden entfernt und externe Transfer-Links gelöst...'
+          dryRun ? t('reset.checking') : t('reset.running'),
+          dryRun ? t('reset.checkingBody') : t('reset.runningBody')
         )
         const data = await requestJson('/actual/reset-tr-import', {
           method: 'POST',
@@ -889,12 +939,12 @@
           transactions: data.transactions || [],
           counterparts: data.counterparts || [],
         })
-        const title = dryRun ? 'Reset-Check fertig' : 'Reset abgeschlossen'
-        const verb = dryRun ? 'würden gelöscht' : 'gelöscht'
-        const unlinkVerb = dryRun ? 'würden entlinkt' : 'entlinkt'
         setStatus(
-          title,
-          `${data.matched_for_delete || data.deleted || 0} TR-Buchungen ${verb}, ${data.matched_for_unlink || data.unlinked || 0} externe Gegenbuchungen ${unlinkVerb}.`,
+          dryRun ? t('reset.checked') : t('reset.done'),
+          t(dryRun ? 'reset.summaryDry' : 'reset.summary', {
+            deleted: data.matched_for_delete || data.deleted || 0,
+            unlinked: data.matched_for_unlink || data.unlinked || 0
+          }),
           'success'
         )
         return data
@@ -905,17 +955,17 @@
         const normalized = raw.includes(',')
           ? raw.replace(/\./g, '').replace(',', '.')
           : raw
-        if (!normalized) throw new Error('Bitte den aktuellen TR-Depotwert eingeben.')
+        if (!normalized) throw new Error(t('portfolio.required'))
         const parsed = Number(normalized)
-        if (!Number.isFinite(parsed)) throw new Error('Der Depotwert ist keine gültige Zahl.')
+        if (!Number.isFinite(parsed)) throw new Error(t('portfolio.invalid'))
         return parsed.toFixed(2)
       }
 
       async function adjustDepotBalance() {
         const targetValue = parseMoneyInput(document.getElementById('depot-target-value').value)
-        const confirmed = confirm(`Depot-Saldo in Actual per Korrekturbuchung auf ${targetValue} EUR angleichen?`)
+        const confirmed = confirm(t('portfolio.confirm', { value: targetValue }))
         if (!confirmed) return null
-        setStatus('Depotwert wird angeglichen', 'Actual-Depot-Saldo wird gelesen und nur das Delta als Korrekturbuchung geschrieben...')
+        setStatus(t('portfolio.adjusting'), t('portfolio.adjustingBody'))
         const data = await requestJson('/actual/depot-adjustment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -924,21 +974,21 @@
         writeJson('import-report', data)
         const delta = typeof data.delta === 'number' ? data.delta.toFixed(2) : data.delta
         const since = data.last_valuation_date
-          ? ` seit letzter Bewertung am ${data.last_valuation_date}`
-          : ' ohne vorherige Bewertung'
+          ? t('portfolio.since', { date: data.last_valuation_date })
+          : t('portfolio.noPrevious')
         const body = data.inserted
-          ? `Korrekturbuchung über ${delta} EUR in ${data.account} erstellt${since}.`
-          : `${data.account} war bereits auf dem Zielwert; keine Buchung erstellt.`
-        setStatus('Depotwert angeglichen', body, 'success')
+          ? t('portfolio.inserted', { delta, account: data.account, since })
+          : t('portfolio.unchanged', { account: data.account })
+        setStatus(t('portfolio.adjusted'), body, 'success')
         return data
       }
 
       async function loadDepotValueFromTradeRepublic({ silent = false } = {}) {
         if (!currentSessionId) {
-          if (!silent) throw new Error('Bitte zuerst Trade Republic verbinden.')
+          if (!silent) throw new Error(t('portfolio.connectFirst'))
           return null
         }
-        if (!silent) setStatus('Depotwert wird geladen', 'Aktueller Trade-Republic-Depotwert wird aus der aktiven Session gelesen...')
+        if (!silent) setStatus(t('portfolio.loading'), t('portfolio.loadingBody'))
         const data = await requestJson('/tr/depot-value', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -949,15 +999,28 @@
         }
         if (!silent) {
           const positions = typeof data.positions === 'number'
-            ? ` aus ${data.valued_positions ?? data.positions}/${data.positions} bewerteten Position(en)`
+            ? t('portfolio.positions', {
+                valued: data.valued_positions ?? data.positions,
+                total: data.positions
+              })
             : ''
           const cash = typeof data.cash_value === 'number'
-            ? ` Cash: ${data.cash_value.toFixed(2)} ${data.currency || 'EUR'}.`
+            ? t('portfolio.cash', { value: data.cash_value.toFixed(2), currency: data.currency || 'EUR' })
             : ''
           const total = typeof data.total_value === 'number'
-            ? ` Total: ${data.total_value.toFixed(2)} ${data.currency || 'EUR'}.`
+            ? t('portfolio.total', { value: data.total_value.toFixed(2), currency: data.currency || 'EUR' })
             : ''
-          setStatus('Depotwert geladen', `Depot: ${(data.depot_value ?? 0).toFixed(2)} ${data.currency || 'EUR'}${positions}.${cash}${total}`, 'success')
+          setStatus(
+            t('portfolio.loaded'),
+            t('portfolio.loadedBody', {
+              value: (data.depot_value ?? 0).toFixed(2),
+              currency: data.currency || 'EUR',
+              positions,
+              cash,
+              total
+            }),
+            'success'
+          )
         }
         return data
       }
@@ -965,43 +1028,47 @@
       function summarizePush(data) {
         const pushed = data.pushed || {}
         const fetchMeta = data.fetch_meta
-          ? `TR: ${data.fetch_meta.items_returned ?? 0} Treffer aus ${data.fetch_meta.pages_read ?? 0} Seite(n)`
+          ? t('push.fetchMeta', {
+              items: data.fetch_meta.items_returned ?? 0,
+              pages: data.fetch_meta.pages_read ?? 0
+            })
           : null
-        const parts = [
-          `${data.mapped_count ?? 0} gemappt`,
-          `${pushed.inserted ?? 0} importiert`,
-          `${pushed.duplicates ?? 0} Duplikate`,
-          `${pushed.skipped ?? 0} uebersprungen`
-        ]
-        if (fetchMeta) parts.unshift(fetchMeta)
-        if (pushed.status === 'mocked') return `${data.mapped_count ?? pushed.accepted ?? 0} Buchungen im Mock-Modus akzeptiert.`
-        return parts.join(', ')
+        if (pushed.status === 'mocked') {
+          return t('push.mocked', { count: data.mapped_count ?? pushed.accepted ?? 0 })
+        }
+        const summary = t('push.summary', {
+          mapped: data.mapped_count ?? 0,
+          inserted: pushed.inserted ?? 0,
+          duplicates: pushed.duplicates ?? 0,
+          skipped: pushed.skipped ?? 0
+        })
+        return fetchMeta ? `${fetchMeta}, ${summary}` : summary
       }
 
       document.getElementById('btn-clear-session').addEventListener('click', () => {
         setSessionId(null)
-        setStatus('Session vergessen', 'Die lokal gespeicherte Session-ID wurde entfernt.', 'success')
+        setStatus(t('status.sessionForgotten'), t('status.sessionForgottenBody'), 'success')
       })
 
       document.getElementById('btn-connect').addEventListener('click', async () => {
         try {
-          setStatus('Login wird gestartet', 'Trade Republic sendet gleich einen Code.')
+          setStatus(t('status.loginStarting'), t('status.loginStartingBody'))
           const data = await requestJson('/tr/connect', { method: 'POST' })
           if (data.session_id) setSessionId(data.session_id)
-          setStatus('Login gestartet', data.message || JSON.stringify(data), 'success')
+          setStatus(t('status.loginStarted'), data.message || JSON.stringify(data), 'success')
         } catch (error) {
-          setStatus('Login fehlgeschlagen', error.message, 'error')
+          setStatus(t('status.loginFailed'), error.message, 'error')
         }
       })
 
       document.getElementById('btn-complete').addEventListener('click', async () => {
         const code = document.getElementById('otp').value.trim()
         if (!code) {
-          setStatus('Code fehlt', 'Bitte den Trade-Republic-Code eingeben.', 'error')
+          setStatus(t('status.codeMissing'), t('status.codeMissingBody'), 'error')
           return
         }
         try {
-          setStatus('Code wird bestätigt', 'Session wird abgeschlossen...')
+          setStatus(t('status.codeConfirming'), t('status.codeConfirmingBody'))
           const data = await requestJson('/tr/complete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1009,14 +1076,14 @@
           })
           if (data.session_id) setSessionId(data.session_id)
           document.getElementById('otp').value = ''
-          setStatus('Verbunden', data.message || 'Trade Republic Session ist aktiv.', 'success')
+          setStatus(t('status.connected'), data.message || t('status.connectedBody'), 'success')
           try {
             await loadDepotValueFromTradeRepublic({ silent: false })
           } catch (error) {
-            setStatus('Verbunden, Depotwert nicht geladen', error.message, 'error')
+            setStatus(t('status.connectedNoPortfolio'), error.message, 'error')
           }
         } catch (error) {
-          setStatus('Code konnte nicht bestaetigt werden', error.message, 'error')
+          setStatus(t('status.codeFailed'), error.message, 'error')
         }
       })
 
@@ -1024,28 +1091,28 @@
         try {
           await importTrData()
         } catch (error) {
-          setStatus('TR-Import fehlgeschlagen', error.message, 'error')
+          setStatus(t('status.importFailed'), error.message, 'error')
         }
       })
 
       document.getElementById('btn-sync').addEventListener('click', async () => {
-        try { await pushMapped() } catch (error) { setStatus('Push fehlgeschlagen', error.message, 'error') }
+        try { await pushMapped() } catch (error) { setStatus(t('status.pushFailed'), error.message, 'error') }
       })
 
       document.getElementById('btn-reset-preview').addEventListener('click', async () => {
-        try { await resetTradeRepublicImport(true) } catch (error) { setStatus('Reset-Check fehlgeschlagen', error.message, 'error') }
+        try { await resetTradeRepublicImport(true) } catch (error) { setStatus(t('status.resetCheckFailed'), error.message, 'error') }
       })
 
       document.getElementById('btn-reset-run').addEventListener('click', async () => {
-        try { await resetTradeRepublicImport(false) } catch (error) { setStatus('Reset fehlgeschlagen', error.message, 'error') }
+        try { await resetTradeRepublicImport(false) } catch (error) { setStatus(t('status.resetFailed'), error.message, 'error') }
       })
 
       document.getElementById('btn-depot-adjustment').addEventListener('click', async () => {
-        try { await adjustDepotBalance() } catch (error) { setStatus('Depot-Abgleich fehlgeschlagen', error.message, 'error') }
+        try { await adjustDepotBalance() } catch (error) { setStatus(t('status.portfolioAdjustFailed'), error.message, 'error') }
       })
 
       document.getElementById('btn-load-depot-value').addEventListener('click', async () => {
-        try { await loadDepotValueFromTradeRepublic() } catch (error) { setStatus('Depotwert konnte nicht geladen werden', error.message, 'error') }
+        try { await loadDepotValueFromTradeRepublic() } catch (error) { setStatus(t('status.portfolioLoadFailed'), error.message, 'error') }
       })
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {
@@ -1056,9 +1123,19 @@
         const file = event.target.files[0]
         event.target.value = ''
         if (!file) return
-        try { await previewCsv(file) } catch (error) { setStatus('CSV-Preview fehlgeschlagen', error.message, 'error') }
+        try { await previewCsv(file) } catch (error) { setStatus(t('status.csvFailed'), error.message, 'error') }
       })
 
+      document.querySelectorAll('[data-language]').forEach((button) => {
+        button.addEventListener('click', () => window.i18n.setLanguage(button.dataset.language))
+      })
+      window.addEventListener('app-language-change', () => {
+        setSessionId(currentSessionId)
+        if (lastServerStatus) renderServerStatus(lastServerStatus)
+        if (lastPreview) renderPreview(lastPreview)
+      })
+
+      window.i18n.applyTranslations()
       setSessionId(currentSessionId)
       updatePushButton()
       restoreSessionFromServer()

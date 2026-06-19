@@ -93,16 +93,18 @@ class FakePortfolioApi:
         self.subscriptions.pop(subscription_id, None)
 
 
-class FakePortfolioFallbackApi(FakePortfolioApi):
-    async def compact_portfolio(self):
-        return self._subscribe(
-            {"type": "compactPortfolio"},
-            "BAD_SUBSCRIPTION_TYPE: Unknown topic type: compactPortfolio.31",
-        )
+class FakeSecAccountPortfolioApi(FakePortfolioApi):
+    def __init__(self):
+        super().__init__()
+        self.portfolio_payloads = []
 
-    async def portfolio(self):
+    def settings(self):
+        return {"securitiesAccountNumber": "SEC-123"}
+
+    async def subscribe(self, payload):
+        self.portfolio_payloads.append(payload)
         return self._subscribe(
-            {"type": "portfolio"},
+            payload,
             {
                 "positions": [
                     {"instrumentId": "IE00B57X3V84", "netSize": "31.293027", "averageBuyIn": "79.922"},
@@ -110,6 +112,17 @@ class FakePortfolioFallbackApi(FakePortfolioApi):
                 ]
             },
         )
+
+
+class FakePortfolioByTypeApi(FakeSecAccountPortfolioApi):
+    async def subscribe(self, payload):
+        if payload["type"] == "compactPortfolio":
+            self.portfolio_payloads.append(payload)
+            return self._subscribe(
+                payload,
+                "BAD_SUBSCRIPTION_TYPE: Unknown topic type: compactPortfolio.31",
+            )
+        return await super().subscribe(payload)
 
     async def recv(self):
         subscription_id = next(iter(self.subscriptions))
@@ -194,9 +207,24 @@ def test_fetch_depot_value_summary_enriches_prices_from_tickers():
     assert summary["valued_positions"] == 2
 
 
-def test_fetch_depot_value_summary_falls_back_when_compact_portfolio_is_rejected():
-    summary = asyncio.run(trade_republic._fetch_depot_value_summary(FakePortfolioFallbackApi()))
+def test_fetch_depot_value_summary_sends_securities_account_number():
+    api = FakeSecAccountPortfolioApi()
+    summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
 
+    assert api.portfolio_payloads == [{"type": "compactPortfolio", "secAccNo": "SEC-123"}]
+    assert summary["depot_value"] == 3159.70
+    assert summary["positions"] == 2
+    assert summary["valued_positions"] == 2
+
+
+def test_fetch_depot_value_summary_falls_back_to_compact_portfolio_by_type():
+    api = FakePortfolioByTypeApi()
+    summary = asyncio.run(trade_republic._fetch_depot_value_summary(api))
+
+    assert api.portfolio_payloads == [
+        {"type": "compactPortfolio", "secAccNo": "SEC-123"},
+        {"type": "compactPortfolioByType", "secAccNo": "SEC-123"},
+    ]
     assert summary["depot_value"] == 3159.70
     assert summary["positions"] == 2
     assert summary["valued_positions"] == 2

@@ -4,8 +4,8 @@ import json
 
 
 def _parse_date(tx: Dict[str, Any]) -> str:
-    """Extrait et formate la date depuis un item TR réel ou mock."""
-    # Format mock: tx["date"]; format réel TR: tx["timestamp"]
+    """Extract and format the date from a real or mocked Trade Republic item."""
+    # Mock format uses date; the API format uses timestamp.
     iso_str = tx.get("date") or tx.get("timestamp") or (tx.get("raw") or {}).get("timestamp") or ""
     if not iso_str:
         return ""
@@ -17,21 +17,15 @@ def _parse_date(tx: Dict[str, Any]) -> str:
 
 
 def _parse_amount(tx: Dict[str, Any]) -> int:
-    """Retourne le montant en centimes entier.
-
-    Gère les trois formes :
-    - Format réel TR : tx["amount"] = {"currency": "EUR", "value": -37, "fractionDigits": 2}
-    - Format mock pré-traité : tx["amount"] = "-4.87" (string)
-    - Format mock avec raw : tx["raw"]["amount"]["value"]
-    """
+    """Return the transaction amount as integer cents."""
     value = None
 
-    # 1. Format réel TR : amount est un dict
+    # Real API format.
     amount_field = tx.get("amount")
     if isinstance(amount_field, dict):
         value = amount_field.get("value")
 
-    # 2. Format mock pré-traité : amount est déjà string ou float
+    # Preprocessed mock format.
     if value is None:
         if isinstance(amount_field, (int, float)):
             value = float(amount_field)
@@ -42,7 +36,7 @@ def _parse_amount(tx: Dict[str, Any]) -> int:
                 .replace(" ", "")
             )
 
-            # deutsches Format
+            # German decimal format.
             if "," in normalized:
                 normalized = normalized.replace(".", "").replace(",", ".")
             try:
@@ -50,7 +44,7 @@ def _parse_amount(tx: Dict[str, Any]) -> int:
             except Exception:
                 value = 0.0
 
-    # 3. Fallback : raw.amount.value (format mock avec raw)
+    # Fallback to raw.amount.value.
     if value is None:
         raw = tx.get("raw") or {}
         raw_amount = raw.get("amount") if isinstance(raw, dict) else None
@@ -64,12 +58,12 @@ def _parse_amount(tx: Dict[str, Any]) -> int:
 
 
 def _extract_currency(tx: Dict[str, Any]) -> str:
-    """Extrait la devise depuis l'item."""
-    # Format réel TR : amount.currency
+    """Extract the currency from an item."""
+    # Real API format.
     amount_field = tx.get("amount")
     if isinstance(amount_field, dict):
         return amount_field.get("currency") or "EUR"
-    # Format mock
+    # Mock format.
     if tx.get("currency"):
         return tx["currency"]
     # Fallback raw
@@ -90,7 +84,7 @@ def _extract_payee(tx: Dict[str, Any]) -> str:
 
 
 def _extract_source_id(tx: Dict[str, Any]) -> str | None:
-    """Format réel TR : tx["id"]. Format mock : tx["id_externe"] ou raw.id."""
+    """Extract the source ID from real and mocked payloads."""
     return (
         tx.get("id_externe")
         or tx.get("id")
@@ -131,16 +125,7 @@ def _build_memo(tx: Dict[str, Any], event_type: str, status: str) -> str:
 
 
 def map_pytr_to_actual(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Mappe les items TR (format réel ou mock) vers le schéma Actual.
-
-    Règles :
-    - Filtrer status sauf EXECUTED/PENDING
-    - Date → YYYY-MM-DD (depuis 'date' ou 'timestamp')
-    - Montant → entier en centimes
-    - payee ← title
-    - eventType + détails TR complets → memo
-    - source_id ← id ou id_externe
-    """
+    """Map real or mocked Trade Republic items to the Actual schema."""
     out = []
     for tx in transactions:
         status = (tx.get("status") or "").upper()

@@ -1,5 +1,6 @@
 from typing import List, Dict, Tuple, Any
 from app.core.config import settings
+from app.core.i18n import tr
 from app.services.state import load_state
 import asyncio
 import uuid
@@ -28,15 +29,12 @@ LAST_HISTORY_META: Dict = {}
 
 
 def _normalize_phone_number(phone: str | None) -> str | None:
-    """Normalise le numéro pour l'API TR.
+    """Normalize a phone number for the Trade Republic API.
 
-    Règles pragmatiques :
-    - conserve un numéro déjà en E.164 (`+...`)
-    - supprime espaces / séparateurs usuels
-    - convertit les formats FR mobiles courants vers `+33...`
+    Keep E.164 numbers, remove common separators, and convert local French
+    mobile formats to their international representation:
       - `06XXXXXXXX` -> `+336XXXXXXXX`
       - `6XXXXXXXX`  -> `+336XXXXXXXX`
-    - sinon retourne la chaîne nettoyée telle quelle
     """
     if not phone:
         return phone
@@ -58,7 +56,7 @@ def _normalize_phone_number(phone: str | None) -> str | None:
         return "+" + cleaned[2:]
 
     if cleaned.isdigit():
-        # French mobile/local heuristic
+        # French mobile/local format support.
         if len(cleaned) == 10 and cleaned.startswith(("06", "07")):
             return "+33" + cleaned[1:]
         if len(cleaned) == 9 and cleaned.startswith(("6", "7")):
@@ -164,18 +162,14 @@ def _build_api_client(cookies_file: str):
 
 
 def _load_cookies_into_client(api) -> bool:
-    """Charge les cookies depuis le fichier dans la websession sans appeler settings().
-
-    N'utilise PAS resume_websession() car celle-ci appelle settings(), ce qui retourne
-    401 pendant la phase de challenge (avant complete_weblogin) et efface les cookies.
-    """
+    """Load cookies without calling settings during an active login challenge."""
     try:
         if api._save_cookies and api._cookies_file.exists():
             api._websession.cookies.load(ignore_discard=True)
-            log.info("Cookies chargés depuis %s", api._cookies_file)
+            log.info("Loaded cookies from %s", api._cookies_file)
             return True
     except Exception as exc:
-        log.warning("Impossible de charger les cookies depuis le fichier: %s", exc)
+        log.warning("Could not load cookies from file: %s", exc)
     return False
 
 
@@ -200,14 +194,14 @@ def _mark_session_connected(session_id: str | None, message: str = "websession v
 
 
 class TRRateLimitError(Exception):
-    """Levée quand Trade Republic retourne un 429 Too Many Requests."""
+    """Raised when Trade Republic returns 429 Too Many Requests."""
     def __init__(self, message: str, retry_after: int | None = None):
         super().__init__(message)
         self.retry_after = retry_after
 
 
 def _raise_if_rate_limited(exc: Exception):
-    """Convertit un HTTPError 429 en TRRateLimitError avec Retry-After si dispo."""
+    """Convert an HTTP 429 response into TRRateLimitError."""
     try:
         import requests
         if isinstance(exc, requests.exceptions.HTTPError):
@@ -218,11 +212,8 @@ def _raise_if_rate_limited(exc: Exception):
                     retry_after = int(resp.headers.get("Retry-After", 0)) or None
                 except Exception:
                     pass
-                msg = (
-                    "Trade Republic a bloqué les tentatives de connexion (429 Too Many Requests). "
-                    "Attendez %s minutes avant de réessayer."
-                    % (f"environ {retry_after // 60}" if retry_after else "30 à 60")
-                )
+                wait = str(retry_after // 60) if retry_after else tr("tr.wait_unknown")
+                msg = tr("tr.rate_limited", wait=wait)
                 raise TRRateLimitError(msg, retry_after=retry_after) from exc
     except TRRateLimitError:
         raise
@@ -276,7 +267,7 @@ _SAMPLE = [
 
 
 def _find_connected_session() -> tuple[str | None, str | None]:
-    """Retourne (session_id, cookies_file) de la dernière session 'connected' trouvée."""
+    """Return the newest connected session and its cookie file."""
     with SESSIONS_LOCK:
         for sid, data in reversed(list(SESSIONS.items())):
             if data.get("status") == "connected":
@@ -285,12 +276,7 @@ def _find_connected_session() -> tuple[str | None, str | None]:
 
 
 def _reset_api_async_state(api) -> None:
-    """Réinitialise l'état asyncio de l'instance API.
-
-    asyncio.run() crée un nouveau event loop à chaque appel. Les variables de classe
-    asyncio.Lock / _ws / subscriptions sont liées au premier loop et deviennent invalides
-    dans un loop différent. On les écrase au niveau instance pour repartir propre.
-    """
+    """Reset API state that is tied to the event loop created by asyncio.run()."""
     import asyncio as _asyncio
     api._lock = _asyncio.Lock()
     api._ws = None
@@ -396,7 +382,7 @@ def _securities_account_number(api) -> str | None:
     if isinstance(account_settings, dict):
         sec_acc_no = account_settings.get("securitiesAccountNumber")
     if not sec_acc_no:
-        raise ValueError("Trade Republic securities account number is missing from account settings.")
+        raise ValueError(tr("tr.securities_account_missing"))
 
     api._sec_acc_no = sec_acc_no
     return str(sec_acc_no)
@@ -613,27 +599,21 @@ def fetch_depot_value(session_id: str | None = None) -> Dict:
     if not resolved_sid:
         resolved_sid, cookies_file = _find_connected_session()
         if not resolved_sid:
-            raise NotImplementedError(
-                "Aucune session Trade Republic active. "
-                "Connectez-vous via /tr/connect puis /tr/complete avant de récupérer le depot."
-            )
-        log.info("fetch_depot_value: utilisation de la session connectée %s", resolved_sid)
+            raise NotImplementedError(tr("tr.no_active_session_depot"))
+        log.info("fetch_depot_value: using connected session %s", resolved_sid)
 
     session = SESSIONS.get(resolved_sid, {})
     cookies_file = cookies_file or session.get("cookies_file") or _cookies_file_for_session(resolved_sid)
 
     api = _get_api_client(resolved_sid)
     if api is None:
-        log.warning("fetch_depot_value: instance API non trouvée en mémoire — reconstruction depuis cookies")
+        log.warning("fetch_depot_value: rebuilding API client from cookies")
         api = _build_api_client(cookies_file)
         _store_api_client(resolved_sid, api)
 
     if not api.resume_websession():
         _mark_session_expired(resolved_sid)
-        raise NotImplementedError(
-            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
-            "Bitte im UI neu verbinden."
-        )
+        raise NotImplementedError(tr("tr.session_expired"))
     _mark_session_connected(resolved_sid)
 
     try:
@@ -643,23 +623,11 @@ def fetch_depot_value(session_id: str | None = None) -> Dict:
         summary["session_id"] = resolved_sid
         return summary
     except Exception as e:
-        raise NotImplementedError(
-            "Échec lors de la récupération de la valeur du depot Trade Republic. "
-            "Vérifiez la session et la connexion. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("tr.depot_fetch_failed", error=e))
 
 
 def fetch_transactions(session_id: str | None = None) -> List[Dict]:
-    """Récupère les transactions depuis Trade Republic.
-
-    - En `APP_MODE=mock` retourne un jeu d'exemples embarqué.
-    - En mode non-mock, réutilise le client authentifié lié au `session_id`
-      (ou à la dernière session 'connected' si non fourni).
-
-    La réponse websocket de `timelineTransactions` est :
-        {"items": [...], "cursors": {"after": ...}, "startingTransactionId": ...}
-    On retourne uniquement `items`.
-    """
+    """Fetch transactions from Trade Republic using an authenticated session."""
     if settings.app_mode == "mock":
         return _SAMPLE
 
@@ -671,58 +639,44 @@ def fetch_transactions(session_id: str | None = None) -> List[Dict]:
     if not resolved_sid:
         resolved_sid, cookies_file = _find_connected_session()
         if not resolved_sid:
-            raise NotImplementedError(
-                "Aucune session Trade Republic active. "
-                "Connectez-vous via /tr/connect puis /tr/complete avant de récupérer les transactions."
-            )
-        log.info("fetch_transactions: utilisation de la session connectée %s", resolved_sid)
+            raise NotImplementedError(tr("tr.no_active_session_transactions"))
+        log.info("fetch_transactions: using connected session %s", resolved_sid)
 
     session = SESSIONS.get(resolved_sid, {})
     cookies_file = cookies_file or session.get("cookies_file") or _cookies_file_for_session(resolved_sid)
 
     api = _get_api_client(resolved_sid)
     if api is None:
-        log.warning("fetch_transactions: instance API non trouvée en mémoire — reconstruction depuis cookies")
+        log.warning("fetch_transactions: rebuilding API client from cookies")
         api = _build_api_client(cookies_file)
         _store_api_client(resolved_sid, api)
 
-    # Auth complète → resume_websession() est sûr ici (settings() retourne 200)
+    # Authentication is complete, so resume_websession can safely call settings.
     if not api.resume_websession():
         _mark_session_expired(resolved_sid)
-        raise NotImplementedError(
-            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
-            "Bitte im UI neu verbinden."
-        )
+        raise NotImplementedError(tr("tr.session_expired"))
     _mark_session_connected(resolved_sid)
 
-    # Réinitialiser l'état asyncio avant chaque appel à run_blocking / asyncio.run().
-    # Sans ça, le 2e appel lève "Task got Future attached to a different loop" parce que
-    # asyncio.Lock (variable de classe) est lié au premier event loop créé par asyncio.run().
+    # Reset state before each run_blocking/asyncio.run call because locks are loop-bound.
     _reset_api_async_state(api)
 
     try:
-        # run_blocking(coro, timeout) == asyncio.run(_receive_one(coro, timeout))
-        # _receive_one : await subscribe_coro → sub_id, puis attend la réponse WS.
-        # La réponse est un dict : {"items": [...], "cursors": {...}, "startingTransactionId": "..."}
         response = api.run_blocking(api.timeline_transactions(), timeout=30)
-        log.info("fetch_transactions: réponse reçue, type=%s", type(response).__name__)
+        log.info("fetch_transactions: received response type=%s", type(response).__name__)
 
         if isinstance(response, dict):
             items = response.get("items", [])
         elif isinstance(response, list):
             items = response
         else:
-            log.warning("fetch_transactions: format de réponse inattendu: %s", response)
+            log.warning("fetch_transactions: unexpected response format: %s", response)
             items = []
 
-        log.info("fetch_transactions: %d transaction(s) récupérée(s)", len(items))
+        log.info("fetch_transactions: fetched %d transaction(s)", len(items))
         return _enrich_trade_details(api, items)
 
     except Exception as e:
-        raise NotImplementedError(
-            "Échec lors de la récupération des transactions Trade Republic. "
-            "Vérifiez la session et la connexion. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("tr.transactions_fetch_failed", error=e))
 
 
 def _parse_filter_date(value: str | None) -> date | None:
@@ -911,7 +865,7 @@ def fetch_all_transactions(
     from_date: str | None = None,
     to_date: str | None = None,
 ) -> List[Dict]:
-    """Récupère toute l'historique disponible via la pagination timelineTransactions."""
+    """Fetch all available history through timelineTransactions pagination."""
     if settings.app_mode == "mock":
         start = _parse_filter_date(from_date)
         end = _parse_filter_date(to_date)
@@ -937,27 +891,21 @@ def fetch_all_transactions(
     if not resolved_sid:
         resolved_sid, cookies_file = _find_connected_session()
         if not resolved_sid:
-            raise NotImplementedError(
-                "Aucune session Trade Republic active. "
-                "Connectez-vous via /tr/connect puis /tr/complete avant de récupérer les transactions."
-            )
-        log.info("fetch_all_transactions: utilisation de la session connectée %s", resolved_sid)
+            raise NotImplementedError(tr("tr.no_active_session_transactions"))
+        log.info("fetch_all_transactions: using connected session %s", resolved_sid)
 
     session = SESSIONS.get(resolved_sid, {})
     cookies_file = cookies_file or session.get("cookies_file") or _cookies_file_for_session(resolved_sid)
 
     api = _get_api_client(resolved_sid)
     if api is None:
-        log.warning("fetch_all_transactions: instance API non trouvée en mémoire — reconstruction depuis cookies")
+        log.warning("fetch_all_transactions: rebuilding API client from cookies")
         api = _build_api_client(cookies_file)
         _store_api_client(resolved_sid, api)
 
     if not api.resume_websession():
         _mark_session_expired(resolved_sid)
-        raise NotImplementedError(
-            "Trade-Republic-Session abgelaufen oder nicht wiederherstellbar. "
-            "Bitte im UI neu verbinden."
-        )
+        raise NotImplementedError(tr("tr.session_expired"))
     _mark_session_connected(resolved_sid)
 
     try:
@@ -970,37 +918,30 @@ def fetch_all_transactions(
         ))
         _set_last_history_meta(meta)
         log.info(
-            "fetch_all_transactions: %d transaction(s) récupérée(s) sur %d page(s)",
+            "fetch_all_transactions: fetched %d transaction(s) across %d page(s)",
             len(items),
             meta.get("pages_read"),
         )
         return items
 
     except Exception as e:
-        raise NotImplementedError(
-            "Échec lors de la récupération de l'historique Trade Republic. "
-            "Vérifiez la session et la connexion. Erreur: %s" % e
-        )
+        raise NotImplementedError(tr("tr.history_fetch_failed", error=e))
 
 
 def start_login() -> Dict:
-    """Démarre le flux d'authentification Trade Republic.
-
-    En mode mock renvoie simplement status connected=true.
-    Dans le cas réel, tente d'utiliser TradeRepublicApi.initiate_weblogin() si disponible.
-    """
+    """Start the Trade Republic authentication flow."""
     _load_sessions()
     sid = str(uuid.uuid4())
 
     if settings.app_mode == "mock":
-        _init_session(sid, "connected", "mock connected")
+        _init_session(sid, "connected", tr("tr.mock_connected"))
         _save_sessions()
-        return {"session_id": sid, "status": "connected", "message": "mock connected"}
+        return {"session_id": sid, "status": "connected", "message": tr("tr.mock_connected")}
 
     try:
         from pytr.api import TradeRepublicApi
     except Exception as e:
-        raise NotImplementedError("pytr n'est pas installé; installez-le et adaptez start_login. Erreur: %s" % e)
+        raise NotImplementedError(tr("tr.pytr_missing", error=e))
 
     session = _init_session(sid, "pending", "started")
     cookies_file = session["cookies_file"]
@@ -1014,16 +955,16 @@ def start_login() -> Dict:
             # initiate_weblogin is synchronous in pytr. It is already executed in a worker thread
             # from the FastAPI route, so call it directly once.
             countdown = api.initiate_weblogin()
-            log.info("weblogin initié, process_id=%s, countdown=%s", api._process_id, countdown)
+            log.info("Web login initiated, process_id=%s, countdown=%s", api._process_id, countdown)
             # Save cookies right away so the fallback path (api lost from memory) can reload them.
             try:
                 api.save_websession()
             except Exception as exc:
-                log.warning("save_websession après initiate_weblogin a échoué: %s", exc)
+                log.warning("save_websession failed after initiate_weblogin: %s", exc)
             with SESSIONS_LOCK:
                 SESSIONS[sid].update({
                     "status": "challenge",
-                    "message": "weblogin initiated",
+                    "message": tr("tr.weblogin_initiated"),
                     "process_id": getattr(api, "_process_id", None),
                     "phone": _normalize_phone_number(settings.tr_phone) or None,
                     "countdown": countdown,
@@ -1032,70 +973,68 @@ def start_login() -> Dict:
             return {
                 "session_id": sid,
                 "status": "challenge",
-                "message": "weblogin initiated — code envoyé par SMS/notification",
+                "message": tr("tr.login_started"),
                 "countdown_seconds": countdown,
             }
     except Exception as e:
         _raise_if_rate_limited(e)
-        log.error("initiate_weblogin a échoué: %s", e, exc_info=True)
+        log.error("initiate_weblogin failed: %s", e, exc_info=True)
         with SESSIONS_LOCK:
             SESSIONS[sid].update({"status": "error", "message": str(e)})
         _save_sessions()
-        raise RuntimeError("Échec de l'initiation du weblogin TR: %s" % e) from e
+        raise RuntimeError(tr("tr.login_start_failed", error=e)) from e
 
-    raise NotImplementedError("initiate_weblogin absent de pytr. Adaptez app/services/trade_republic.py.")
+    raise NotImplementedError(tr("tr.login_method_missing"))
 
 
 def complete_login(code: str, session_id: str | None = None) -> Dict:
-    """Complète le connexion TR — attend un code/pin et tente complete_weblogin."""
+    """Complete Trade Republic authentication with a code and session ID."""
     _load_sessions()
 
     if settings.app_mode == "mock":
         sid = session_id or str(uuid.uuid4())
         if sid not in SESSIONS:
-            _init_session(sid, "connected", "mock connected via code")
+            _init_session(sid, "connected", tr("tr.mock_connected_code"))
         else:
             with SESSIONS_LOCK:
-                SESSIONS[sid].update({"status": "connected", "message": "mock connected via code"})
+                SESSIONS[sid].update({"status": "connected", "message": tr("tr.mock_connected_code")})
         _save_sessions()
-        return {"session_id": sid, "status": "connected", "message": "mock connected"}
+        return {"session_id": sid, "status": "connected", "message": tr("tr.mock_connected")}
 
     try:
         from pytr.api import TradeRepublicApi
     except Exception as e:
-        raise NotImplementedError("pytr n'est pas installé; installez-le et adaptez complete_login. Erreur: %s" % e)
+        raise NotImplementedError(tr("tr.pytr_missing", error=e))
 
     if not session_id:
-        raise NotImplementedError("'session_id' est requis pour compléter un weblogin déjà initié.")
+        raise NotImplementedError(tr("tr.login_session_required"))
 
     session = SESSIONS.get(session_id)
     if not session:
-        raise NotImplementedError("Session introuvable/expirée. Refaire /tr/connect puis /tr/complete avec le session_id renvoyé.")
+        raise NotImplementedError(tr("tr.session_not_found"))
 
     cookies_file = session.get('cookies_file') or _cookies_file_for_session(session_id)
 
     api = _get_api_client(session_id)
     if api is None:
         log.warning(
-            "Instance API introuvable en mémoire pour session %s — "
-            "reconstruction depuis cookies_file (le conteneur a peut-être redémarré).",
+            "API client missing from memory for session %s; rebuilding it from cookies",
             session_id,
         )
         api = _build_api_client(cookies_file)
         _store_api_client(session_id, api)
-        # Charger les cookies manuellement — on NE DOIT PAS appeler resume_websession()
-        # car elle invoque settings() qui retourne 401 pendant la phase challenge et
-        # efface les cookies, invalidant le flow en cours.
+        # Load cookies directly. resume_websession calls settings, receives 401 during
+        # the challenge, and clears the cookies required by complete_weblogin.
         _load_cookies_into_client(api)
     else:
-        log.info("Instance API retrouvée en mémoire pour session %s", session_id)
+        log.info("Reusing API client for session %s", session_id)
 
     process_id = session.get("process_id")
     if process_id:
         setattr(api, "_process_id", process_id)
         log.info("complete_login: process_id=%s, session_id=%s", process_id, session_id)
     else:
-        raise NotImplementedError("Session invalide: process_id absent. Refaire /tr/connect.")
+        raise NotImplementedError(tr("tr.invalid_session_process"))
 
     try:
         # During challenge completion, do NOT call resume_websession() — it calls settings()
@@ -1106,10 +1045,10 @@ def complete_login(code: str, session_id: str | None = None) -> Dict:
             try:
                 api.save_websession()
             except Exception as exc:
-                log.warning("save_websession après complete_weblogin a échoué: %s", exc)
-            log.info("complete_weblogin réussi pour session %s", session_id)
+                log.warning("save_websession failed after complete_weblogin: %s", exc)
+            log.info("complete_weblogin succeeded for session %s", session_id)
             with SESSIONS_LOCK:
-                SESSIONS[session_id].update({"status": "connected", "message": "via complete_weblogin"})
+                SESSIONS[session_id].update({"status": "connected", "message": tr("tr.weblogin_completed")})
             _save_sessions()
             return {
                 "session_id": session_id,
@@ -1118,13 +1057,13 @@ def complete_login(code: str, session_id: str | None = None) -> Dict:
             }
     except Exception as e:
         _raise_if_rate_limited(e)
-        log.error("complete_weblogin a échoué pour session %s: %s", session_id, e, exc_info=True)
+        log.error("complete_weblogin failed for session %s: %s", session_id, e, exc_info=True)
         with SESSIONS_LOCK:
             SESSIONS[session_id].update({"status": "error", "message": str(e)})
         _save_sessions()
-        raise NotImplementedError("Impossible de compléter l'authentification automatiquement. Erreur: %s" % e)
+        raise NotImplementedError(tr("tr.login_complete_failed", error=e))
 
-    raise NotImplementedError("Aucune méthode connue pour compléter la connexion (complete_weblogin absent). Adaptez app/services/trade_republic.py.")
+    raise NotImplementedError(tr("tr.login_complete_method_missing"))
 
 
 def get_login_status() -> Dict:
@@ -1159,23 +1098,23 @@ def get_login_status() -> Dict:
 
 
 def resend_login(session_id: str) -> Dict:
-    """Redemande l'envoi du code TR pour une session en état 'challenge'."""
+    """Resend the Trade Republic code for a challenge session."""
     _load_sessions()
 
     if settings.app_mode == "mock":
-        return {"session_id": session_id, "status": "challenge", "message": "mock resend"}
+        return {"session_id": session_id, "status": "challenge", "message": tr("tr.mock_code_resent")}
 
     try:
         from pytr.api import TradeRepublicApi  # noqa: F401
     except Exception as e:
-        raise NotImplementedError("pytr n'est pas installé. Erreur: %s" % e)
+        raise NotImplementedError(tr("tr.pytr_missing", error=e))
 
     session = SESSIONS.get(session_id)
     if not session:
-        raise NotImplementedError("Session introuvable/expirée. Refaire /tr/connect.")
+        raise NotImplementedError(tr("tr.session_not_found"))
 
     if session.get("status") != "challenge":
-        raise NotImplementedError("La session n'est pas en attente de code (status=%s)." % session.get("status"))
+        raise NotImplementedError(tr("tr.session_not_waiting", status=session.get("status")))
 
     api = _get_api_client(session_id)
     if api is None:
@@ -1188,16 +1127,16 @@ def resend_login(session_id: str) -> Dict:
     if process_id:
         setattr(api, "_process_id", process_id)
     else:
-        raise NotImplementedError("process_id absent. Refaire /tr/connect.")
+        raise NotImplementedError(tr("tr.invalid_session_process"))
 
     try:
         if hasattr(api, 'resend_weblogin'):
             api.resend_weblogin()
-            log.info("resend_weblogin réussi pour session %s", session_id)
-            return {"session_id": session_id, "status": "challenge", "message": "code renvoyé"}
+            log.info("resend_weblogin succeeded for session %s", session_id)
+            return {"session_id": session_id, "status": "challenge", "message": tr("tr.code_resent")}
     except Exception as e:
         _raise_if_rate_limited(e)
-        log.error("resend_weblogin a échoué pour session %s: %s", session_id, e, exc_info=True)
-        raise NotImplementedError("Échec du renvoi du code: %s" % e)
+        log.error("resend_weblogin failed for session %s: %s", session_id, e, exc_info=True)
+        raise NotImplementedError(tr("tr.code_resend_failed", error=e))
 
-    raise NotImplementedError("resend_weblogin absent de pytr.")
+    raise NotImplementedError(tr("tr.code_resend_method_missing"))

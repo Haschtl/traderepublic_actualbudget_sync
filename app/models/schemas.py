@@ -20,16 +20,14 @@ class PytrRaw(BaseModel):
 
 
 class PytrTransaction(BaseModel):
-    """Accepte le format mock (id_externe/date/amount string) ET le format réel de l'API TR
-    (id/timestamp/amount dict). Tous les champs sont optionnels ; le mapper normalise ensuite.
-    extra='allow' empêche Pydantic de rejeter les champs inconnus (icon, avatar, badge…)."""
+    """Accept mocked and real Trade Republic payloads with additional fields."""
 
     model_config = ConfigDict(extra="allow")
 
-    # Champs format mock pré-transformé
+    # Preprocessed mock fields.
     id_externe: Optional[str] = None
     date: Optional[str] = None
-    amount: Optional[Any] = None          # str OU dict {"currency","value","fractionDigits"}
+    amount: Optional[Any] = None
     currency: Optional[str] = None
     type: Optional[str] = None
     category: Optional[str] = None
@@ -39,7 +37,7 @@ class PytrTransaction(BaseModel):
     instrument: Optional[Any] = None
     raw: Optional[Any] = None
 
-    # Champs format réel TR
+    # Real Trade Republic fields.
     id: Optional[str] = None
     timestamp: Optional[str] = None
     eventType: Optional[str] = None

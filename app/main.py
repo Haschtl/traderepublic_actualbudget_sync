@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from app.api.routes import router as api_router
 from app.core.config import settings
-from app.core.i18n import reset_language, set_language
+from app.core.i18n import get_language, reset_language, set_language
 from app.services.scheduler import start_scheduler, stop_scheduler
 
 
@@ -29,7 +29,7 @@ async def request_language(request: Request, call_next):
     token = set_language(request.headers.get("Accept-Language"))
     try:
         response = await call_next(request)
-        response.headers["Content-Language"] = request.headers.get("Accept-Language", "de").split(",", 1)[0]
+        response.headers["Content-Language"] = get_language()
         return response
     finally:
         reset_language(token)

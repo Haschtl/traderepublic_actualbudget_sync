@@ -1,0 +1,228 @@
+(function () {
+  const translations = {
+    de: {
+      'app.subtitle': 'Trade Republic verbinden, aktuelle Buchungen synchronisieren oder gezielt historische Daten nach Actual Budget importieren.',
+      'language.label': 'Sprache',
+      'session.label': 'Trade Republic Session',
+      'session.none': 'Keine Session aktiv',
+      'session.active': 'Aktiv: {id}...',
+      'session.validity.unknown': 'Sessionstatus unbekannt',
+      'session.validity.valid': 'Session gültig',
+      'session.validity.expired': 'Session abgelaufen, neu verbinden nötig',
+      'session.validity.mock': 'Mock-Session aktiv',
+      'session.validity.none': 'Keine Backend-Session',
+      'session.validity.other': 'Sessionstatus: {status}',
+      'session.sync.none': 'Noch kein Sync bekannt',
+      'session.sync.failed': 'Letzter Sync fehlgeschlagen: {error}',
+      'session.sync.success': 'Letzter erfolgreicher Sync: {date}',
+      'session.forget': 'Session vergessen',
+      'session.restored.title': 'Session wiederhergestellt',
+      'session.restored.body': 'Backend-Session {id}... ist {status}.',
+      'ready.title': 'Bereit',
+      'ready.body': 'Starte mit dem Trade-Republic-Login oder führe einen Sync mit einer vorhandenen Session aus.',
+      'connect.title': '1. Verbinden',
+      'connect.body': 'Startet den Login und speichert die Session-ID lokal im Browser.',
+      'connect.start': 'TR Login starten',
+      'connect.code': 'Code / PIN',
+      'connect.codePlaceholder': 'Code eingeben',
+      'connect.action': 'Aktion',
+      'connect.confirm': 'Code bestätigen',
+      'sync.title': '2. Synchronisieren',
+      'sync.body': 'Erst Daten aus Trade Republic oder CSV importieren und prüfen, danach genau diesen Preview-Stand nach Actual Budget pushen.',
+      'sync.trImport': 'TR-Import',
+      'sync.csvImport': 'CSV-Import',
+      'sync.push': 'Zu Actual pushen',
+      'sync.historyFrom': 'History von',
+      'sync.historyTo': 'History bis',
+      'sync.portfolioValue': 'Aktueller TR-Depotwert',
+      'sync.portfolioPlaceholder': 'z.B. 3000,00',
+      'sync.portfolioBalance': 'Depot-Saldo',
+      'sync.loadValue': 'TR-Wert laden',
+      'sync.adjustValue': 'Depotwert angleichen',
+      'depot.title': '3. Depotwert angleichen',
+      'results.title': 'Letztes Ergebnis',
+      'results.fetched': 'Abgerufen',
+      'results.mapped': 'Gemappt',
+      'results.imported': 'Importiert',
+      'results.duplicates': 'Duplikate',
+      'results.matches': 'Transfer-Matches',
+      'preview.title': 'Import-Plan',
+      'preview.date': 'Datum',
+      'preview.payee': 'Payee',
+      'preview.eventType': 'EventType',
+      'preview.account': 'Account',
+      'preview.action': 'Aktion',
+      'preview.amount': 'Betrag',
+      'preview.empty': 'Noch kein Mapping erstellt.',
+      'preview.unavailable': 'Preview nicht verfügbar.',
+      'preview.noTransactions': 'Keine importierbaren Buchungen gefunden.',
+      'preview.actualMatch': 'Actual-Match',
+      'preview.noMatch': 'Kein Match',
+      'preview.byAccount': 'Nach Account',
+      'preview.byEvent': 'Nach EventType',
+      'preview.plannedActions': 'Geplante Aktionen',
+      'preview.none': 'Keine',
+      'details.raw': 'Trade Republic Raw-Daten',
+      'details.mapping': 'Actual Mapping Preview',
+      'details.response': 'Letzte API-Antwort',
+      'details.report': 'Import-Report',
+      'maintenance.title': 'Wartung',
+      'maintenance.body': 'Reset nur verwenden, wenn du importierte Trade-Republic-Buchungen aus Actual entfernen und danach sauber neu importieren willst.',
+      'maintenance.check': 'Reset prüfen',
+      'maintenance.reset': 'TR-Import zurücksetzen',
+      'history.invalidRange': 'History von muss vor History bis liegen.',
+      'history.timeline': 'Trade Republic Timeline wird geladen...',
+      'history.range': 'Trade Republic Historie wird geladen: {from} bis {to}',
+      'history.beginning': 'Anfang',
+      'history.today': 'heute',
+      'import.running': 'TR-Import läuft',
+      'import.prepared.title': 'TR-Import vorbereitet',
+      'import.prepared.body': '{count} Buchungen geladen und gemappt.{pages}',
+      'import.pages': ' Aus {count} TR-Seite(n).',
+      'mapping.running': 'Mapping wird erstellt',
+      'mapping.runningBody': 'Die geladenen TR-Daten werden ins Actual-Format übersetzt...',
+      'mapping.done': 'Mapping erstellt',
+      'mapping.doneBody': '{count} Buchungen im Actual-Format. {transfers}',
+      'mapping.transfers': '{matched}/{total} externe Transfers mit bestehender Gegenbuchung gefunden.',
+      'mapping.previewUnavailable': 'Actual-Preview nicht verfügbar.',
+      'csv.select': 'Bitte zuerst eine Trade-Republic-CSV auswählen.',
+      'csv.reading': 'CSV wird gelesen',
+      'csv.readingBody': 'Trade-Republic-Export wird geparst und gemappt...',
+      'csv.prepared': 'CSV vorbereitet',
+      'csv.preparedBody': '{rows} CSV-Zeilen gelesen, {mapped} Buchungen fürs Actual-Format vorbereitet.',
+      'push.noData': 'Bitte zuerst TR-Import & Preview oder CSV-Import & Preview ausführen.',
+      'push.confirm': '{count} gemappte Buchungen jetzt nach Actual Budget pushen?',
+      'push.running': 'Push läuft',
+      'push.runningBody': 'Der aktuelle Mapping-Preview wird nach Actual Budget übertragen...',
+      'push.done': 'Push abgeschlossen',
+      'push.summary': '{mapped} gemappt, {inserted} importiert, {duplicates} Duplikate, {skipped} übersprungen',
+      'push.fetchMeta': 'TR: {items} Treffer aus {pages} Seite(n)',
+      'push.mocked': '{count} Buchungen im Mock-Modus akzeptiert.',
+      'reset.confirm': 'Importierte Buchungen in den Trade-Republic-Cash/Depot-Accounts löschen und gematchte externe Gegenbuchungen entlinken? Bitte vorher "Reset prüfen" ausführen.',
+      'reset.checking': 'Reset wird geprüft',
+      'reset.running': 'Reset läuft',
+      'reset.checkingBody': 'Actual wird gelesen; es wird noch nichts geändert.',
+      'reset.runningBody': 'Importierte TR-Zeilen werden entfernt und externe Transfer-Links gelöst...',
+      'reset.checked': 'Reset-Check fertig',
+      'reset.done': 'Reset abgeschlossen',
+      'reset.summaryDry': '{deleted} TR-Buchungen würden gelöscht, {unlinked} externe Gegenbuchungen würden entlinkt.',
+      'reset.summary': '{deleted} TR-Buchungen gelöscht, {unlinked} externe Gegenbuchungen entlinkt.',
+      'portfolio.required': 'Bitte den aktuellen TR-Depotwert eingeben.',
+      'portfolio.invalid': 'Der Depotwert ist keine gültige Zahl.',
+      'portfolio.confirm': 'Depot-Saldo in Actual per Korrekturbuchung auf {value} EUR angleichen?',
+      'portfolio.adjusting': 'Depotwert wird angeglichen',
+      'portfolio.adjustingBody': 'Actual-Depot-Saldo wird gelesen und nur das Delta als Korrekturbuchung geschrieben...',
+      'portfolio.adjusted': 'Depotwert angeglichen',
+      'portfolio.since': ' seit letzter Bewertung am {date}',
+      'portfolio.noPrevious': ' ohne vorherige Bewertung',
+      'portfolio.inserted': 'Korrekturbuchung über {delta} EUR in {account} erstellt{since}.',
+      'portfolio.unchanged': '{account} war bereits auf dem Zielwert; keine Buchung erstellt.',
+      'portfolio.connectFirst': 'Bitte zuerst Trade Republic verbinden.',
+      'portfolio.loading': 'Depotwert wird geladen',
+      'portfolio.loadingBody': 'Aktueller Trade-Republic-Depotwert wird aus der aktiven Session gelesen...',
+      'portfolio.loaded': 'Depotwert geladen',
+      'portfolio.loadedBody': 'Depot: {value} {currency}{positions}.{cash}{total}',
+      'portfolio.positions': ' aus {valued}/{total} bewerteten Position(en)',
+      'portfolio.cash': ' Cash: {value} {currency}.',
+      'portfolio.total': ' Gesamt: {value} {currency}.',
+      'status.sessionForgotten': 'Session vergessen',
+      'status.sessionForgottenBody': 'Die lokal gespeicherte Session-ID wurde entfernt.',
+      'status.loginStarting': 'Login wird gestartet',
+      'status.loginStartingBody': 'Trade Republic sendet gleich einen Code.',
+      'status.loginStarted': 'Login gestartet',
+      'status.loginFailed': 'Login fehlgeschlagen',
+      'status.codeMissing': 'Code fehlt',
+      'status.codeMissingBody': 'Bitte den Trade-Republic-Code eingeben.',
+      'status.codeConfirming': 'Code wird bestätigt',
+      'status.codeConfirmingBody': 'Session wird abgeschlossen...',
+      'status.connected': 'Verbunden',
+      'status.connectedBody': 'Trade Republic Session ist aktiv.',
+      'status.connectedNoPortfolio': 'Verbunden, Depotwert nicht geladen',
+      'status.codeFailed': 'Code konnte nicht bestätigt werden',
+      'status.importFailed': 'TR-Import fehlgeschlagen',
+      'status.pushFailed': 'Push fehlgeschlagen',
+      'status.resetCheckFailed': 'Reset-Check fehlgeschlagen',
+      'status.resetFailed': 'Reset fehlgeschlagen',
+      'status.portfolioAdjustFailed': 'Depot-Abgleich fehlgeschlagen',
+      'status.portfolioLoadFailed': 'Depotwert konnte nicht geladen werden',
+      'status.csvFailed': 'CSV-Preview fehlgeschlagen',
+      'tooltip.matchTitle': 'Match in Actual Budget',
+      'tooltip.date': 'Datum: {value}',
+      'tooltip.account': 'Account: {value}',
+      'tooltip.payee': 'Payee: {value}',
+      'tooltip.amount': 'Betrag: {value}',
+      'tooltip.importText': 'Import-Text: {value}',
+      'tooltip.notes': 'Notizen: {value}',
+      'tooltip.financialId': 'Financial ID: {value}',
+      'tooltip.unmatchedTitle': 'Kein Transfer-Match in Actual gefunden',
+      'tooltip.counterAccount': 'Gesuchtes Gegenkonto: {value}',
+      'tooltip.trDate': 'TR-Datum: {value}',
+      'tooltip.trAmount': 'TR-Betrag: {value}',
+      'tooltip.createPair': 'Kein bestehender Transfer gefunden. Es wird ein neues Transfer-Paar zwischen Trade Republic Cash und dem konfigurierten Gegenkonto angelegt.',
+      'tooltip.cashOnly': 'Kein bestehender Transfer gefunden. Es wird kein Gegenbuchungs-Transfer erstellt; importiert wird nur die Trade-Republic-Cash-Buchung.',
+      'tooltip.duplicate': 'Diese Buchung ist ein Duplikat und wird nicht erneut importiert.',
+      'tooltip.unknownAction': 'Kein bestehender Transfer gefunden. Geplante Aktion: {action}.',
+      'common.unknown': 'unbekannt'
+    },
+    en: {
+      'app.subtitle': 'Connect Trade Republic, synchronize current transactions, or import selected historical data into Actual Budget.',
+      'language.label': 'Language', 'session.label': 'Trade Republic session', 'session.none': 'No active session', 'session.active': 'Active: {id}...',
+      'session.validity.unknown': 'Session status unknown', 'session.validity.valid': 'Session valid', 'session.validity.expired': 'Session expired; reconnect required', 'session.validity.mock': 'Mock session active', 'session.validity.none': 'No backend session', 'session.validity.other': 'Session status: {status}',
+      'session.sync.none': 'No sync recorded yet', 'session.sync.failed': 'Last sync failed: {error}', 'session.sync.success': 'Last successful sync: {date}', 'session.forget': 'Forget session', 'session.restored.title': 'Session restored', 'session.restored.body': 'Backend session {id}... is {status}.',
+      'ready.title': 'Ready', 'ready.body': 'Start with the Trade Republic login or run a sync using an existing session.',
+      'connect.title': '1. Connect', 'connect.body': 'Starts login and stores the session ID locally in this browser.', 'connect.start': 'Start TR login', 'connect.code': 'Code / PIN', 'connect.codePlaceholder': 'Enter code', 'connect.action': 'Action', 'connect.confirm': 'Confirm code',
+      'sync.title': '2. Synchronize', 'sync.body': 'Import and review data from Trade Republic or CSV, then push that exact preview to Actual Budget.', 'sync.trImport': 'TR import', 'sync.csvImport': 'CSV import', 'sync.push': 'Push to Actual', 'sync.historyFrom': 'History from', 'sync.historyTo': 'History to', 'sync.portfolioValue': 'Current TR portfolio value', 'sync.portfolioPlaceholder': 'e.g. 3000.00', 'sync.portfolioBalance': 'Portfolio balance', 'sync.loadValue': 'Load TR value', 'sync.adjustValue': 'Adjust portfolio value',
+      'depot.title': '3. Adjust portfolio value',
+      'results.title': 'Latest result', 'results.fetched': 'Fetched', 'results.mapped': 'Mapped', 'results.imported': 'Imported', 'results.duplicates': 'Duplicates', 'results.matches': 'Transfer matches',
+      'preview.title': 'Import plan', 'preview.date': 'Date', 'preview.payee': 'Payee', 'preview.eventType': 'EventType', 'preview.account': 'Account', 'preview.action': 'Action', 'preview.amount': 'Amount', 'preview.empty': 'No mapping created yet.', 'preview.unavailable': 'Preview unavailable.', 'preview.noTransactions': 'No importable transactions found.', 'preview.actualMatch': 'Actual match', 'preview.noMatch': 'No match', 'preview.byAccount': 'By account', 'preview.byEvent': 'By EventType', 'preview.plannedActions': 'Planned actions', 'preview.none': 'None',
+      'details.raw': 'Trade Republic raw data', 'details.mapping': 'Actual mapping preview', 'details.response': 'Latest API response', 'details.report': 'Import report',
+      'maintenance.title': 'Maintenance', 'maintenance.body': 'Only reset when you need to remove imported Trade Republic transactions from Actual and import them again cleanly.', 'maintenance.check': 'Check reset', 'maintenance.reset': 'Reset TR import',
+      'history.invalidRange': 'History start must be before history end.', 'history.timeline': 'Loading the Trade Republic timeline...', 'history.range': 'Loading Trade Republic history: {from} to {to}', 'history.beginning': 'beginning', 'history.today': 'today',
+      'import.running': 'TR import running', 'import.prepared.title': 'TR import prepared', 'import.prepared.body': '{count} transactions loaded and mapped.{pages}', 'import.pages': ' From {count} TR page(s).',
+      'mapping.running': 'Creating mapping', 'mapping.runningBody': 'Converting the loaded TR data to the Actual format...', 'mapping.done': 'Mapping created', 'mapping.doneBody': '{count} transactions in Actual format. {transfers}', 'mapping.transfers': '{matched}/{total} external transfers matched to an existing counterpart.', 'mapping.previewUnavailable': 'Actual preview unavailable.',
+      'csv.select': 'Select a Trade Republic CSV first.', 'csv.reading': 'Reading CSV', 'csv.readingBody': 'Parsing and mapping the Trade Republic export...', 'csv.prepared': 'CSV prepared', 'csv.preparedBody': '{rows} CSV rows read, {mapped} transactions prepared for Actual.',
+      'push.noData': 'Run TR import and preview or CSV import and preview first.', 'push.confirm': 'Push {count} mapped transactions to Actual Budget now?', 'push.running': 'Push running', 'push.runningBody': 'Sending the current mapping preview to Actual Budget...', 'push.done': 'Push complete', 'push.summary': '{mapped} mapped, {inserted} imported, {duplicates} duplicates, {skipped} skipped', 'push.fetchMeta': 'TR: {items} results from {pages} page(s)', 'push.mocked': '{count} transactions accepted in mock mode.',
+      'reset.confirm': 'Delete imported transactions from the Trade Republic cash/portfolio accounts and unlink matched external counterparts? Run "Check reset" first.', 'reset.checking': 'Checking reset', 'reset.running': 'Reset running', 'reset.checkingBody': 'Reading Actual; no changes are being made yet.', 'reset.runningBody': 'Removing imported TR rows and external transfer links...', 'reset.checked': 'Reset check complete', 'reset.done': 'Reset complete', 'reset.summaryDry': '{deleted} TR transactions would be deleted, {unlinked} external counterparts would be unlinked.', 'reset.summary': '{deleted} TR transactions deleted, {unlinked} external counterparts unlinked.',
+      'portfolio.required': 'Enter the current TR portfolio value.', 'portfolio.invalid': 'The portfolio value is not a valid number.', 'portfolio.confirm': 'Adjust the Actual portfolio balance to {value} EUR with a correction transaction?', 'portfolio.adjusting': 'Adjusting portfolio value', 'portfolio.adjustingBody': 'Reading the Actual portfolio balance and writing only the delta as a correction...', 'portfolio.adjusted': 'Portfolio value adjusted', 'portfolio.since': ' since the last valuation on {date}', 'portfolio.noPrevious': ' with no previous valuation', 'portfolio.inserted': 'Created a correction of {delta} EUR in {account}{since}.', 'portfolio.unchanged': '{account} already matched the target; no transaction created.', 'portfolio.connectFirst': 'Connect Trade Republic first.', 'portfolio.loading': 'Loading portfolio value', 'portfolio.loadingBody': 'Reading the current Trade Republic portfolio value from the active session...', 'portfolio.loaded': 'Portfolio value loaded', 'portfolio.loadedBody': 'Portfolio: {value} {currency}{positions}.{cash}{total}', 'portfolio.positions': ' from {valued}/{total} valued position(s)', 'portfolio.cash': ' Cash: {value} {currency}.', 'portfolio.total': ' Total: {value} {currency}.',
+      'status.sessionForgotten': 'Session forgotten', 'status.sessionForgottenBody': 'The locally stored session ID was removed.', 'status.loginStarting': 'Starting login', 'status.loginStartingBody': 'Trade Republic will send a code shortly.', 'status.loginStarted': 'Login started', 'status.loginFailed': 'Login failed', 'status.codeMissing': 'Code missing', 'status.codeMissingBody': 'Enter the Trade Republic code.', 'status.codeConfirming': 'Confirming code', 'status.codeConfirmingBody': 'Completing the session...', 'status.connected': 'Connected', 'status.connectedBody': 'The Trade Republic session is active.', 'status.connectedNoPortfolio': 'Connected, portfolio value not loaded', 'status.codeFailed': 'Could not confirm code', 'status.importFailed': 'TR import failed', 'status.pushFailed': 'Push failed', 'status.resetCheckFailed': 'Reset check failed', 'status.resetFailed': 'Reset failed', 'status.portfolioAdjustFailed': 'Portfolio adjustment failed', 'status.portfolioLoadFailed': 'Could not load portfolio value', 'status.csvFailed': 'CSV preview failed',
+      'tooltip.matchTitle': 'Match in Actual Budget', 'tooltip.date': 'Date: {value}', 'tooltip.account': 'Account: {value}', 'tooltip.payee': 'Payee: {value}', 'tooltip.amount': 'Amount: {value}', 'tooltip.importText': 'Import text: {value}', 'tooltip.notes': 'Notes: {value}', 'tooltip.financialId': 'Financial ID: {value}', 'tooltip.unmatchedTitle': 'No transfer match found in Actual', 'tooltip.counterAccount': 'Counter-account searched: {value}', 'tooltip.trDate': 'TR date: {value}', 'tooltip.trAmount': 'TR amount: {value}', 'tooltip.createPair': 'No existing transfer found. A new transfer pair will be created between Trade Republic Cash and the configured counter-account.', 'tooltip.cashOnly': 'No existing transfer found. No counterpart transfer will be created; only the Trade Republic cash transaction will be imported.', 'tooltip.duplicate': 'This transaction is a duplicate and will not be imported again.', 'tooltip.unknownAction': 'No existing transfer found. Planned action: {action}.',
+      'common.unknown': 'unknown'
+    }
+  }
+
+  let language = localStorage.getItem('app_language')
+  if (!translations[language]) language = navigator.language?.toLowerCase().startsWith('en') ? 'en' : 'de'
+
+  function t(key, values = {}) {
+    const template = translations[language][key] ?? translations.de[key] ?? key
+    return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? `{${name}}`)
+  }
+
+  function applyTranslations() {
+    document.documentElement.lang = language
+    document.querySelectorAll('[data-i18n]').forEach((element) => {
+      element.textContent = t(element.dataset.i18n)
+    })
+    document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
+      element.placeholder = t(element.dataset.i18nPlaceholder)
+    })
+    document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
+      element.setAttribute('aria-label', t(element.dataset.i18nAriaLabel))
+    })
+    document.querySelectorAll('[data-language]').forEach((button) => {
+      const active = button.dataset.language === language
+      button.classList.toggle('active', active)
+      button.setAttribute('aria-pressed', String(active))
+    })
+  }
+
+  function setLanguage(nextLanguage) {
+    if (!translations[nextLanguage]) return
+    language = nextLanguage
+    localStorage.setItem('app_language', language)
+    applyTranslations()
+    window.dispatchEvent(new CustomEvent('app-language-change'))
+  }
+
+  window.i18n = { t, setLanguage, applyTranslations, get language() { return language } }
+})()

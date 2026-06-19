@@ -1,7 +1,7 @@
 from app.mapping.mapper import map_pytr_to_actual
 
 
-# Format mock pré-traité (ancien format avec id_externe/date/amount string)
+# Preprocessed mock format (legacy format with external_id/date/amount string)
 SAMPLE_MOCK = [
     {
         "id_externe": "1",
@@ -24,7 +24,7 @@ SAMPLE_MOCK = [
     },
 ]
 
-# Format réel de l'API Trade Republic (retourné par timeline_transactions)
+# Real Trade Republic API format returned by timeline_transactions
 SAMPLE_TR_REAL = [
     {
         "id": "2d3d0883-00b0-43aa-ad98-396f9bd5db6d",
@@ -57,7 +57,7 @@ SAMPLE_TR_REAL = [
 
 
 def test_map_filters_and_amounts():
-    """Test du format mock pré-traité."""
+    """Test the preprocessed mock format."""
     mapped = map_pytr_to_actual(SAMPLE_MOCK)
     assert isinstance(mapped, list)
     # Only first tx should be present (second is CANCELED)
@@ -69,9 +69,9 @@ def test_map_filters_and_amounts():
 
 
 def test_map_real_tr_format():
-    """Test du format réel renvoyé par l'API Trade Republic (timeline_transactions)."""
+    """Test the real format returned by the Trade Republic API."""
     mapped = map_pytr_to_actual(SAMPLE_TR_REAL)
-    # La transaction PENDING est importable comme transaction non-cleared.
+    # A pending transaction can be imported as uncleared.
     assert len(mapped) == 3
 
     etf = mapped[0]

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 import asyncio
 from typing import List
 from app.models.schemas import PytrTransaction, ActualTransaction
+from app.core.i18n import tr
 from app.mapping.mapper import map_pytr_to_actual
 from app.services.trade_republic import fetch_transactions as tr_fetch
 from app.services.trade_republic import (
@@ -40,7 +41,7 @@ def _serialize_models(items):
 
 @router.post("/tr/map", response_model=List[ActualTransaction])
 async def map_preview(transactions: List[PytrTransaction]):
-    """Retourne la preview des transactions mappées (sans les envoyer)."""
+    """Return mapped transactions without sending them to Actual."""
     mapped = map_pytr_to_actual(_serialize_models(transactions))
     return mapped
 
@@ -104,13 +105,7 @@ async def push_mapped_to_actual(transactions: List[ActualTransaction]):
 
 @router.post("/tr/connect")
 async def tr_connect():
-    """Démarre le flux d'authentification Trade Republic.
-
-    En mode mock renvoie simplement status connected=true.
-    Dans le cas réel, déclenche l'envoi du code SMS/notification TR.
-    Retourne un 'session_id' à fournir dans /tr/complete et /tr/resend.
-    Lève HTTP 429 si TR rate-limite les tentatives, HTTP 500 pour toute autre erreur.
-    """
+    """Start Trade Republic authentication and return its session ID."""
     try:
         resp = await asyncio.to_thread(tr_start_login)
     except TRRateLimitError as e:
@@ -123,13 +118,11 @@ async def tr_connect():
 
 @router.post("/tr/complete")
 async def tr_complete(payload: dict):
-    """Complète le connexion TR — attend un JSON contenant par ex. {'code': '123456', 'session_id': '...'}.
-    Retourne le statut final ou une erreur.
-    """
+    """Complete Trade Republic authentication with a code and session ID."""
     code = payload.get("code") or payload.get("pin")
     session_id = payload.get("session_id")
     if not code:
-        raise HTTPException(status_code=400, detail="Attendu un champ 'code' ou 'pin' dans le body")
+        raise HTTPException(status_code=400, detail=tr("api.code_required"))
     try:
         resp = await asyncio.to_thread(tr_complete_login, code, session_id)
     except TRRateLimitError as e:
@@ -142,13 +135,10 @@ async def tr_complete(payload: dict):
 
 @router.post("/tr/resend")
 async def tr_resend(payload: dict):
-    """Redemande l'envoi du code TR pour une session déjà initiée.
-
-    Body: {'session_id': '...'}
-    """
+    """Resend the code for an initiated Trade Republic session."""
     session_id = payload.get("session_id")
     if not session_id:
-        raise HTTPException(status_code=400, detail="Attendu un champ 'session_id' dans le body")
+        raise HTTPException(status_code=400, detail=tr("api.session_id_required"))
     try:
         resp = await asyncio.to_thread(tr_resend_login, session_id)
     except TRRateLimitError as e:
@@ -161,11 +151,7 @@ async def tr_resend(payload: dict):
 
 @router.get("/actual/files")
 async def list_actual_files():
-    """Liste les fichiers budgets disponibles sur le serveur Actual.
-
-    Utile pour trouver le bon ACTUAL_BUDGET_ID (file_id ou name exact)
-    et les noms de comptes disponibles à mettre dans ACTUAL_ACCOUNT_NAME.
-    """
+    """List budget files available on the Actual server."""
     try:
         files = await asyncio.to_thread(actual_list_files)
     except NotImplementedError as e:
@@ -177,7 +163,7 @@ async def list_actual_files():
 
 @router.post("/actual/encrypt")
 async def encrypt_actual_budget():
-    """Active le chiffrement du budget Actual configuré."""
+    """Enable encryption for the configured Actual budget."""
     try:
         result = await asyncio.to_thread(actual_encrypt_budget)
     except NotImplementedError as e:
@@ -203,7 +189,7 @@ async def reset_actual_tr_import(payload: Optional[dict] = None):
 async def adjust_actual_depot(payload: dict):
     target_value = payload.get("target_value")
     if target_value in (None, ""):
-        raise HTTPException(status_code=400, detail="target_value fehlt.")
+        raise HTTPException(status_code=400, detail=tr("api.target_value_required"))
     date = payload.get("date") or None
     try:
         return await asyncio.to_thread(actual_adjust_depot_balance, target_value, date)
@@ -233,9 +219,7 @@ async def tr_depot_value(payload: Optional[dict] = None):
 
 @router.post("/tr/sync")
 async def sync_to_actual(payload: Optional[dict] = None):
-    """Récupère, mappe, et pousse vers Actual (mode mock possible).
-    Retourne un résumé de l'opération.
-    """
+    """Fetch, map, and push transactions to Actual."""
     session_id = (payload or {}).get("session_id") or None
     try:
         txs = await asyncio.to_thread(tr_fetch, session_id)
@@ -251,13 +235,13 @@ async def sync_to_actual(payload: Optional[dict] = None):
 
 @router.post("/tr/sync-now")
 async def sync_now():
-    """Lance le même sync que le scheduler, avec verrou anti-parallèle."""
+    """Run the scheduler sync with its concurrency lock."""
     return await run_scheduled_sync()
 
 
 @router.post("/tr/sync-history")
 async def sync_history(payload: Optional[dict] = None):
-    """Récupère toute l'historique TR paginée, mappe, puis pousse vers Actual."""
+    """Fetch paginated Trade Republic history, map it, and push it to Actual."""
     payload = payload or {}
     session_id = payload.get("session_id") or None
     from_date = payload.get("from_date") or None
@@ -269,7 +253,7 @@ async def sync_history(payload: Optional[dict] = None):
 async def preview_csv_import(payload: dict):
     csv_text = payload.get("csv") or ""
     if not csv_text.strip():
-        raise HTTPException(status_code=400, detail="CSV fehlt.")
+        raise HTTPException(status_code=400, detail=tr("api.csv_required"))
     txs = parse_trade_republic_csv(csv_text)
     mapped = map_pytr_to_actual(txs)
     preview = None
@@ -295,7 +279,7 @@ async def preview_csv_import(payload: dict):
 async def sync_csv_import(payload: dict):
     csv_text = payload.get("csv") or ""
     if not csv_text.strip():
-        raise HTTPException(status_code=400, detail="CSV fehlt.")
+        raise HTTPException(status_code=400, detail=tr("api.csv_required"))
     try:
         txs = parse_trade_republic_csv(csv_text)
         mapped = map_pytr_to_actual(txs)
