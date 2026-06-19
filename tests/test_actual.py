@@ -130,10 +130,13 @@ def test_interest_payment_duplicate_is_detected_across_csv_and_api_ids():
         existing = Transactions(
             id="interest",
             acct=cash.id,
-            date=date_to_int(datetime.date(2026, 3, 1)),
-            amount=1903,
-            financial_id="019ca879-ea1f-7691-8d2e-7f0acaa7b215",
-            notes='Trade Republic raw: {"timestamp": "2026-03-01T08:18:08.031957Z"}',
+            date=date_to_int(datetime.date(2026, 6, 1)),
+            amount=1286,
+            financial_id="019e8188-7c0b-790d-b5cb-2052e0cc344e",
+            notes=(
+                "TR eventType: INTEREST_PAYOUT\n"
+                'Trade Republic raw: {"timestamp": "2026-06-01T04:54:26.059306Z"}'
+            ),
             tombstone=0,
             is_parent=0,
         )
@@ -144,9 +147,10 @@ def test_interest_payment_duplicate_is_detected_across_csv_and_api_ids():
         match = _find_cross_source_import_duplicate(
             session,
             cash,
-            datetime.date(2026, 3, 1),
-            19.03,
-            'Trade Republic raw: {"id": "different-api-id", "timestamp": "2026-03-01T08:18:08.031957Z"}',
+            datetime.date(2026, 6, 1),
+            12.86,
+            'Trade Republic raw: {"id": "different-api-id", "timestamp": "2026-06-01T12:00:00.000Z"}',
+            "INTEREST_PAYOUT",
         )
 
         assert match.id == existing.id

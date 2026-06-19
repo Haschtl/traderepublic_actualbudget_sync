@@ -14,6 +14,7 @@ DEPOT_VALUATION_IMPORT_PREFIX = "tr-depot-valuation-adjustment:"
 TR_TIMESTAMP_PATTERN = re.compile(
     r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})"
 )
+DATE_AMOUNT_EVENT_DUPLICATES = {"INTEREST_PAYOUT"}
 
 
 def _is_truthy(value: Any) -> bool:
@@ -54,6 +55,7 @@ def _find_cross_source_import_duplicate(
     date: datetime.date,
     amount_eur: float,
     notes: str | None,
+    event_type: str | None = None,
 ):
     """Match an imported TR row whose CSV/API source IDs differ.
 
@@ -92,6 +94,12 @@ def _find_cross_source_import_duplicate(
             for existing in existing_timestamps
         )
         if timestamps_match:
+            return candidate
+        if (
+            event_type in DATE_AMOUNT_EVENT_DUPLICATES
+            and candidate.date == date_to_int(date)
+            and f"TR eventType: {event_type}" in (candidate.notes or "")
+        ):
             return candidate
     return None
 
@@ -467,6 +475,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                     date,
                     amount_eur,
                     tx.get("memo"),
+                    tx.get("event_type"),
                 )
             if duplicate_match is None and transfer_account is not None and date and amount_eur:
                 duplicate_match = _find_existing_linked_transfer_duplicate(
@@ -534,6 +543,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                     date,
                     amount_eur,
                     tx.get("memo"),
+                    tx.get("event_type"),
                 )
             duplicate = duplicate_match is not None
             if duplicate:
@@ -568,6 +578,7 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                     date,
                     amount_eur,
                     tx.get("memo"),
+                    tx.get("event_type"),
                 )
             duplicate = duplicate_match is not None
             if duplicate:
@@ -990,6 +1001,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                                 date,
                                 amount_eur,
                                 notes,
+                                tx.get("event_type"),
                             )
                         if duplicate_match is None:
                             duplicate_match = _find_existing_linked_transfer_duplicate(
@@ -1056,6 +1068,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                                 date,
                                 amount_eur,
                                 notes,
+                                tx.get("event_type"),
                             )
                         if duplicate_match is not None:
                             duplicates += 1
@@ -1105,6 +1118,7 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                             date,
                             amount_eur,
                             notes,
+                            tx.get("event_type"),
                         )
                     if duplicate_match is not None:
                         duplicates += 1
