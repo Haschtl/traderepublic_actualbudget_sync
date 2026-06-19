@@ -5,10 +5,27 @@ from actual.utils.conversions import date_to_int
 from sqlmodel import SQLModel, Session, create_engine
 
 from app.services.actual import (
+    adjust_depot_balance,
     _find_cross_source_import_duplicate,
     _find_existing_linked_transfer_duplicate,
     _find_trade_import_duplicate,
 )
+from app.core.config import settings
+
+
+def test_depot_adjustment_dry_run_does_not_insert():
+    original_mode = settings.app_mode
+    settings.app_mode = "mock"
+    try:
+        result = adjust_depot_balance("3000.00", dry_run=True)
+    finally:
+        settings.app_mode = original_mode
+
+    assert result["dry_run"] is True
+    assert result["would_insert"] is True
+    assert result["delta"] == 3000.0
+    assert result["payee"] == "TR Depotwert-Anpassung seit letzter Bewertung"
+    assert result["inserted"] is False
 
 
 def test_cross_source_transfer_duplicate_requires_existing_import():

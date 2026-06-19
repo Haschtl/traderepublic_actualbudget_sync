@@ -191,8 +191,9 @@ async def adjust_actual_depot(payload: dict):
     if target_value in (None, ""):
         raise HTTPException(status_code=400, detail=tr("api.target_value_required"))
     date = payload.get("date") or None
+    dry_run = bool(payload.get("dry_run", False))
     try:
-        return await asyncio.to_thread(actual_adjust_depot_balance, target_value, date)
+        return await asyncio.to_thread(actual_adjust_depot_balance, target_value, date, dry_run)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except NotImplementedError as e:

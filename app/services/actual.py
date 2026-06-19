@@ -852,8 +852,12 @@ def _valuation_date_or_none(transaction) -> str | None:
         return str(getattr(transaction, "date", "")) or None
 
 
-def adjust_depot_balance(target_value_eur: float | int | str, date: str | None = None) -> Dict[str, Any]:
-    """Create one explicit depot valuation adjustment transaction."""
+def adjust_depot_balance(
+    target_value_eur: float | int | str,
+    date: str | None = None,
+    dry_run: bool = False,
+) -> Dict[str, Any]:
+    """Preview or create one explicit depot valuation adjustment transaction."""
     target = Decimal(str(target_value_eur))
     adjustment_date = datetime.date.fromisoformat(date) if date else datetime.date.today()
 
@@ -861,12 +865,15 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
         return {
             "status": "mocked",
             "account": settings.actual_depot_account_name,
+            "payee": DEPOT_VALUATION_PAYEE,
             "date": adjustment_date.isoformat(),
             "last_valuation_date": None,
             "current_balance": 0.0,
             "target_balance": float(target),
             "delta": float(target),
-            "inserted": True,
+            "dry_run": dry_run,
+            "would_insert": target != 0,
+            "inserted": not dry_run and target != 0,
         }
 
     try:
@@ -917,15 +924,18 @@ def adjust_depot_balance(target_value_eur: float | int | str, date: str | None =
         result = {
             "status": "ok",
             "account": depot_account.name,
+            "payee": DEPOT_VALUATION_PAYEE,
             "date": adjustment_date.isoformat(),
             "last_valuation_date": last_valuation_date,
             "current_balance": float(current),
             "target_balance": float(cents_to_decimal(target_cents)),
             "delta": float(delta),
+            "dry_run": dry_run,
+            "would_insert": delta_cents != 0,
             "inserted": False,
         }
 
-        if delta_cents == 0:
+        if delta_cents == 0 or dry_run:
             return result
 
         notes = (

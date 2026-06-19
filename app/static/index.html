@@ -246,6 +246,34 @@
         word-break: break-word;
       }
 
+      .depot-notice {
+        margin-top: 14px;
+        padding: 12px 14px;
+        border: 1px solid #b2ccff;
+        border-radius: 6px;
+        background: var(--soft-blue);
+      }
+
+      .depot-notice.success {
+        border-color: #abefc6;
+        background: var(--soft-green);
+      }
+
+      .depot-notice.error {
+        border-color: #fecdca;
+        background: var(--soft-red);
+      }
+
+      .depot-notice-title {
+        font-weight: 700;
+      }
+
+      .depot-notice-body {
+        margin-top: 4px;
+        color: var(--muted);
+        word-break: break-word;
+      }
+
       .session-card {
         min-width: 260px;
         text-align: right;
@@ -595,6 +623,10 @@
               </span>
             </label>
           </div>
+          <div id="depot-notice" class="depot-notice" role="status" aria-live="polite" hidden>
+            <div id="depot-notice-title" class="depot-notice-title"></div>
+            <div id="depot-notice-body" class="depot-notice-body"></div>
+          </div>
         </div>
 
         <div class="span-12">
@@ -676,13 +708,15 @@
       </dialog>
     </main>
 
-    <script src="/static/i18n.js?v=20260619-3"></script>
+    <script src="/static/i18n.js?v=20260619-6"></script>
     <script>
       let currentSessionId = localStorage.getItem('tr_session_id') || null
       let lastRawTransactions = []
       let lastMappedTransactions = []
       let lastPreview = null
       let lastServerStatus = null
+      let depotPreviewTimer = null
+      let depotPreviewVersion = 0
       const t = window.i18n.t
 
       const buttons = Array.from(document.querySelectorAll('button'))
@@ -921,8 +955,9 @@
         return `<div class="summary-box"><h3>${escapeHtml(title)}</h3><ul>${items || `<li>${escapeHtml(t('preview.none'))}</li>`}</ul></div>`
       }
 
-      async function requestJson(url, options = {}) {
-        setBusy(true)
+      async function requestJson(url, options = {}, behavior = {}) {
+        const showBusyState = behavior.busy !== false
+        if (showBusyState) setBusy(true)
         try {
           options.headers = {
             'Accept-Language': window.i18n.language,
@@ -936,7 +971,7 @@
           }
           return data
         } finally {
-          setBusy(false)
+          if (showBusyState) setBusy(false)
         }
       }
 
@@ -1130,7 +1165,86 @@
         return parsed.toFixed(2)
       }
 
+      function setDepotNotice(title, body, type = 'info') {
+        const notice = document.getElementById('depot-notice')
+        notice.className = `depot-notice ${type}`
+        document.getElementById('depot-notice-title').textContent = title
+        document.getElementById('depot-notice-body').textContent = body
+        notice.hidden = false
+      }
+
+      function formatSignedMoney(value) {
+        const amount = Number(value || 0)
+        const prefix = amount > 0 ? '+' : ''
+        return `${prefix}${amount.toFixed(2)}`
+      }
+
+      function renderDepotPlan(plan) {
+        const current = Number(plan.current_balance || 0).toFixed(2)
+        const target = Number(plan.target_balance || 0).toFixed(2)
+        const delta = formatSignedMoney(plan.delta)
+        if (!plan.would_insert) {
+          setDepotNotice(
+            t('portfolio.noAdjustmentTitle'),
+            t('portfolio.noAdjustmentBody', { account: plan.account, target }),
+            'success'
+          )
+          return
+        }
+        setDepotNotice(
+          t('portfolio.planTitle'),
+          t('portfolio.planBody', {
+            account: plan.account,
+            payee: plan.payee,
+            date: plan.date,
+            current,
+            target,
+            delta
+          })
+        )
+      }
+
+      async function previewDepotAdjustment(targetValue) {
+        const plan = await requestJson('/actual/depot-adjustment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_value: targetValue, dry_run: true })
+        }, { busy: false })
+        return plan
+      }
+
+      function cancelScheduledDepotPreview() {
+        if (depotPreviewTimer) clearTimeout(depotPreviewTimer)
+        depotPreviewTimer = null
+        depotPreviewVersion += 1
+      }
+
+      function scheduleDepotPreview() {
+        cancelScheduledDepotPreview()
+        const input = document.getElementById('depot-target-value')
+        if (!input.value.trim()) {
+          document.getElementById('depot-notice').hidden = true
+          return
+        }
+
+        const previewVersion = depotPreviewVersion
+        depotPreviewTimer = setTimeout(async () => {
+          depotPreviewTimer = null
+          try {
+            const targetValue = parseMoneyInput(input.value)
+            setDepotNotice(t('portfolio.previewing'), t('portfolio.previewingBody'))
+            const plan = await previewDepotAdjustment(targetValue)
+            if (previewVersion === depotPreviewVersion) renderDepotPlan(plan)
+          } catch (error) {
+            if (previewVersion === depotPreviewVersion) {
+              setDepotNotice(t('portfolio.manualPreviewFailedTitle'), error.message, 'error')
+            }
+          }
+        }, 500)
+      }
+
       async function adjustDepotBalance() {
+        cancelScheduledDepotPreview()
         const targetValue = parseMoneyInput(document.getElementById('depot-target-value').value)
         const confirmed = confirm(t('portfolio.confirm', { value: targetValue }))
         if (!confirmed) return null
@@ -1149,49 +1263,69 @@
           ? t('portfolio.inserted', { delta, account: data.account, since })
           : t('portfolio.unchanged', { account: data.account })
         setStatus(t('portfolio.adjusted'), body, 'success')
+        setDepotNotice(t('portfolio.adjusted'), body, 'success')
         return data
       }
 
       async function loadDepotValueFromTradeRepublic({ silent = false } = {}) {
+        cancelScheduledDepotPreview()
         if (!currentSessionId) {
-          if (!silent) throw new Error(t('portfolio.connectFirst'))
+          const error = new Error(t('portfolio.connectFirst'))
+          setDepotNotice(t('status.portfolioLoadFailed'), error.message, 'error')
+          if (!silent) throw error
           return null
         }
+        setDepotNotice(t('portfolio.loading'), t('portfolio.loadingBody'))
         if (!silent) setStatus(t('portfolio.loading'), t('portfolio.loadingBody'))
-        const data = await requestJson('/tr/depot-value', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sessionPayload())
-        })
-        if (typeof data.depot_value === 'number') {
-          document.getElementById('depot-target-value').value = data.depot_value.toFixed(2)
+        try {
+          const data = await requestJson('/tr/depot-value', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(sessionPayload())
+          })
+          if (typeof data.depot_value === 'number') {
+            const targetValue = data.depot_value.toFixed(2)
+            document.getElementById('depot-target-value').value = targetValue
+            try {
+              renderDepotPlan(await previewDepotAdjustment(targetValue))
+            } catch (error) {
+              setDepotNotice(
+                t('portfolio.previewFailedTitle'),
+                t('portfolio.previewFailedBody', { value: targetValue, error: error.message }),
+                'error'
+              )
+            }
+          }
+          if (!silent) {
+            const positions = typeof data.positions === 'number'
+              ? t('portfolio.positions', {
+                  valued: data.valued_positions ?? data.positions,
+                  total: data.positions
+                })
+              : ''
+            const cash = typeof data.cash_value === 'number'
+              ? t('portfolio.cash', { value: data.cash_value.toFixed(2), currency: data.currency || 'EUR' })
+              : ''
+            const total = typeof data.total_value === 'number'
+              ? t('portfolio.total', { value: data.total_value.toFixed(2), currency: data.currency || 'EUR' })
+              : ''
+            setStatus(
+              t('portfolio.loaded'),
+              t('portfolio.loadedBody', {
+                value: (data.depot_value ?? 0).toFixed(2),
+                currency: data.currency || 'EUR',
+                positions,
+                cash,
+                total
+              }),
+              'success'
+            )
+          }
+          return data
+        } catch (error) {
+          setDepotNotice(t('status.portfolioLoadFailed'), error.message, 'error')
+          throw error
         }
-        if (!silent) {
-          const positions = typeof data.positions === 'number'
-            ? t('portfolio.positions', {
-                valued: data.valued_positions ?? data.positions,
-                total: data.positions
-              })
-            : ''
-          const cash = typeof data.cash_value === 'number'
-            ? t('portfolio.cash', { value: data.cash_value.toFixed(2), currency: data.currency || 'EUR' })
-            : ''
-          const total = typeof data.total_value === 'number'
-            ? t('portfolio.total', { value: data.total_value.toFixed(2), currency: data.currency || 'EUR' })
-            : ''
-          setStatus(
-            t('portfolio.loaded'),
-            t('portfolio.loadedBody', {
-              value: (data.depot_value ?? 0).toFixed(2),
-              currency: data.currency || 'EUR',
-              positions,
-              cash,
-              total
-            }),
-            'success'
-          )
-        }
-        return data
       }
 
       function summarizePush(data) {
@@ -1291,12 +1425,19 @@
       })
 
       document.getElementById('btn-depot-adjustment').addEventListener('click', async () => {
-        try { await adjustDepotBalance() } catch (error) { setStatus(t('status.portfolioAdjustFailed'), error.message, 'error') }
+        try {
+          await adjustDepotBalance()
+        } catch (error) {
+          setDepotNotice(t('status.portfolioAdjustFailed'), error.message, 'error')
+          setStatus(t('status.portfolioAdjustFailed'), error.message, 'error')
+        }
       })
 
       document.getElementById('btn-load-depot-value').addEventListener('click', async () => {
         try { await loadDepotValueFromTradeRepublic() } catch (error) { setStatus(t('status.portfolioLoadFailed'), error.message, 'error') }
       })
+
+      document.getElementById('depot-target-value').addEventListener('input', scheduleDepotPreview)
 
       document.getElementById('btn-csv-preview').addEventListener('click', async () => {
         document.getElementById('csv-file').click()
