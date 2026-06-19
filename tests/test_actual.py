@@ -204,3 +204,38 @@ def test_trade_duplicate_uses_date_and_isin_when_timeline_amount_differs():
         )
 
         assert match.id in {whole_shares.id, fractional_shares.id}
+
+
+def test_corporate_action_matches_legacy_dividend_trade_by_isin():
+    engine = create_engine("sqlite://")
+    SQLModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        cash = Accounts(id="cash", name="Trade Republic Cash", offbudget=0, closed=0)
+        existing = Transactions(
+            id="legacy-dividend",
+            acct=cash.id,
+            date=date_to_int(datetime.date(2026, 3, 5)),
+            amount=132,
+            financial_id="019cbd9e-7aba-7d45-bc7d-3a1e33be1d5f",
+            notes=(
+                "Cash Dividend for ISIN IE00B9MRHC27\n"
+                "TR eventType: TRADING_TRADE_EXECUTED"
+            ),
+            tombstone=0,
+            is_parent=0,
+        )
+        session.add(cash)
+        session.add(existing)
+        session.commit()
+
+        match = _find_cross_source_import_duplicate(
+            session,
+            cash,
+            datetime.date(2026, 3, 5),
+            1.32,
+            "Corporate action cash for IE00B9MRHC27",
+            "SSP_CORPORATE_ACTION_CASH",
+        )
+
+        assert match.id == existing.id

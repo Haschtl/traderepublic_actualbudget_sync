@@ -43,6 +43,7 @@ def test_parse_trade_republic_csv_normalizes_export_event_types():
         ("TRANSFER_OUTBOUND", "BANK_TRANSACTION_OUTGOING", -1000, "external"),
         ("TRANSFER_INSTANT_OUTBOUND", "BANK_TRANSACTION_OUTGOING", -1000, "external"),
         ("INTEREST_PAYOUT", "INTEREST_PAYOUT", 1000, None),
+        ("DIVIDEND", "SSP_CORPORATE_ACTION_CASH", 1000, None),
         ("CARD_TRANSACTION", "CARD_TRANSACTION", -1000, None),
         ("TAX_OPTIMIZATION", "TAX_OPTIMIZATION", 1000, None),
     ]

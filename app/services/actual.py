@@ -17,6 +17,7 @@ TR_TIMESTAMP_PATTERN = re.compile(
 TR_ISIN_PATTERN = re.compile(r"\b[A-Z]{2}[A-Z0-9]{9}[0-9]\b")
 TR_CSV_FEE_PATTERN = re.compile(r'"fee"\s*:\s*"(-?\d+(?:\.\d+)?)"')
 DATE_AMOUNT_EVENT_DUPLICATES = {"INTEREST_PAYOUT"}
+SECURITY_CASH_EVENT_DUPLICATES = {"SSP_CORPORATE_ACTION_CASH"}
 
 
 def _is_truthy(value: Any) -> bool:
@@ -75,6 +76,7 @@ def _find_cross_source_import_duplicate(
         return None
 
     incoming_timestamps = _extract_tr_timestamps(notes)
+    incoming_isins = set(TR_ISIN_PATTERN.findall(notes or ""))
     match_days = max(0, settings.transfer_match_days)
     start = date_to_int(date - datetime.timedelta(days=match_days))
     end = date_to_int(date + datetime.timedelta(days=match_days))
@@ -101,6 +103,12 @@ def _find_cross_source_import_duplicate(
             event_type in DATE_AMOUNT_EVENT_DUPLICATES
             and candidate.date == date_to_int(date)
             and f"TR eventType: {event_type}" in (candidate.notes or "")
+        ):
+            return candidate
+        if (
+            event_type in SECURITY_CASH_EVENT_DUPLICATES
+            and candidate.date == date_to_int(date)
+            and incoming_isins.intersection(TR_ISIN_PATTERN.findall(candidate.notes or ""))
         ):
             return candidate
     return None
