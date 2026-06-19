@@ -55,7 +55,12 @@ def _find_cross_source_import_duplicate(
     amount_eur: float,
     notes: str | None,
 ):
-    """Match an imported TR row whose CSV/API source IDs differ."""
+    """Match an imported TR row whose CSV/API source IDs differ.
+
+    A linked transfer with the same account, date, and amount is also treated as
+    the same import. This covers older matches whose source timestamp changed
+    between the CSV and API representations.
+    """
     if account is None:
         return None
     try:
@@ -66,9 +71,6 @@ def _find_cross_source_import_duplicate(
         return None
 
     incoming_timestamps = _extract_tr_timestamps(notes)
-    if not incoming_timestamps:
-        return None
-
     candidates = session.exec(
         select(Transactions)
         .where(Transactions.acct == account.id)
@@ -80,11 +82,12 @@ def _find_cross_source_import_duplicate(
     ).all()
     for candidate in candidates:
         existing_timestamps = _extract_tr_timestamps(candidate.notes)
-        if any(
+        timestamps_match = any(
             abs((incoming - existing).total_seconds()) <= 5
             for incoming in incoming_timestamps
             for existing in existing_timestamps
-        ):
+        )
+        if timestamps_match or getattr(candidate, "transferred_id", None) is not None:
             return candidate
     return None
 

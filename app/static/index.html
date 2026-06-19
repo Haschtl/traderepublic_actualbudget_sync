@@ -276,6 +276,16 @@
         margin-top: 10px;
       }
 
+      .debug-content {
+        padding: 0 10px 10px;
+        border-top: 1px solid var(--line);
+        background: var(--bg);
+      }
+
+      .debug-content > details:first-child {
+        margin-top: 10px;
+      }
+
       summary {
         padding: 12px 14px;
         cursor: pointer;
@@ -313,22 +323,79 @@
         font-weight: 750;
       }
 
-      tr.transfer-match-row td {
+      tr.sync-link-row td {
         background: #ecfdf3;
         border-bottom-color: #abefc6;
       }
 
-      tr.transfer-match-row:hover td {
+      tr.sync-link-row:hover td {
         background: #d1fadf;
       }
 
-      tr.transfer-unmatched-row td {
-        background: #fef3f2;
-        border-bottom-color: #fecdca;
+      tr.sync-import-row td {
+        background: #eef4ff;
+        border-bottom-color: #b2ccff;
       }
 
-      tr.transfer-unmatched-row:hover td {
-        background: #fee4e2;
+      tr.sync-import-row:hover td {
+        background: #dbe8ff;
+      }
+
+      tr.sync-warning-row td {
+        background: #fffaeb;
+        border-bottom-color: #fedf89;
+      }
+
+      tr.sync-warning-row:hover td {
+        background: #fef0c7;
+      }
+
+      tr.sync-skip-row td {
+        background: #f2f4f7;
+        border-bottom-color: #d0d5dd;
+        color: #667085;
+      }
+
+      tr.sync-skip-row:hover td {
+        background: #e4e7ec;
+      }
+
+      .sync-outcome {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 3px 8px;
+        font-size: 12px;
+        font-weight: 750;
+        line-height: 1.35;
+      }
+
+      .sync-outcome.import {
+        background: #dbe8ff;
+        color: #1949d8;
+      }
+
+      .sync-outcome.link {
+        background: #d1fadf;
+        color: #067647;
+      }
+
+      .sync-outcome.warning {
+        background: #fef0c7;
+        color: #93370d;
+      }
+
+      .sync-outcome.skip {
+        background: #e4e7ec;
+        color: #475467;
+      }
+
+      .action-code {
+        display: block;
+        margin-top: 4px;
+        color: var(--muted);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
       }
 
       .summary-list {
@@ -336,6 +403,49 @@
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 10px;
         margin-top: 12px;
+      }
+
+      .preview-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 16px;
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .legend-swatch {
+        width: 14px;
+        height: 14px;
+        flex: 0 0 14px;
+        border: 1px solid;
+        border-radius: 3px;
+      }
+
+      .legend-swatch.skip {
+        background: #f2f4f7;
+        border-color: #d0d5dd;
+      }
+
+      .legend-swatch.import {
+        background: #eef4ff;
+        border-color: #b2ccff;
+      }
+
+      .legend-swatch.link {
+        background: #ecfdf3;
+        border-color: #abefc6;
+      }
+
+      .legend-swatch.warning {
+        background: #fffaeb;
+        border-color: #fedf89;
       }
 
       .summary-box {
@@ -505,6 +615,12 @@
         <div class="span-12">
           <div class="panel" style="margin-bottom: 10px;">
             <h2 data-i18n="preview.title">Import-Plan</h2>
+            <div class="preview-legend" data-i18n-aria-label="preview.legend">
+              <span class="legend-item"><span class="legend-swatch skip" aria-hidden="true"></span><span data-i18n="preview.legendSkip">Bereits vorhanden, wird übersprungen</span></span>
+              <span class="legend-item"><span class="legend-swatch import" aria-hidden="true"></span><span data-i18n="preview.legendImport">Wird importiert</span></span>
+              <span class="legend-item"><span class="legend-swatch link" aria-hidden="true"></span><span data-i18n="preview.legendLink">Wird importiert und verknüpft</span></span>
+              <span class="legend-item"><span class="legend-swatch warning" aria-hidden="true"></span><span data-i18n="preview.legendWarning">Wird ohne Gegenbuchung importiert</span></span>
+            </div>
             <div id="preview-summary" class="summary-list"></div>
             <div style="overflow:auto; margin-top: 12px;">
               <table>
@@ -514,7 +630,7 @@
                     <th data-i18n="preview.payee">Payee</th>
                     <th data-i18n="preview.eventType">EventType</th>
                     <th data-i18n="preview.account">Account</th>
-                    <th data-i18n="preview.action">Aktion</th>
+                    <th data-i18n="preview.syncOutcome">Beim Sync</th>
                     <th data-i18n="preview.amount">Betrag</th>
                   </tr>
                 </thead>
@@ -524,21 +640,26 @@
               </table>
             </div>
           </div>
-          <details>
-            <summary data-i18n="details.raw">Trade Republic Raw-Daten</summary>
-            <pre id="raw">[]</pre>
-          </details>
-          <details>
-            <summary data-i18n="details.mapping">Actual Mapping Preview</summary>
-            <pre id="mapped">[]</pre>
-          </details>
-          <details>
-            <summary data-i18n="details.response">Letzte API-Antwort</summary>
-            <pre id="last-response">{}</pre>
-          </details>
-          <details open>
-            <summary data-i18n="details.report">Import-Report</summary>
-            <pre id="import-report">[]</pre>
+          <details class="debug-section">
+            <summary data-i18n="details.debug">Debug</summary>
+            <div class="debug-content">
+              <details>
+                <summary data-i18n="details.raw">Trade Republic Raw-Daten</summary>
+                <pre id="raw">[]</pre>
+              </details>
+              <details>
+                <summary data-i18n="details.mapping">Actual Mapping Preview</summary>
+                <pre id="mapped">[]</pre>
+              </details>
+              <details>
+                <summary data-i18n="details.response">Letzte API-Antwort</summary>
+                <pre id="last-response">{}</pre>
+              </details>
+              <details>
+                <summary data-i18n="details.report">Import-Report</summary>
+                <pre id="import-report">[]</pre>
+              </details>
+            </div>
           </details>
           <div class="panel" style="margin-top: 10px;">
             <h2 data-i18n="maintenance.title">Wartung</h2>
@@ -667,10 +788,17 @@
         summary.innerHTML = [
           renderSummaryBox(t('preview.byAccount'), preview.by_account),
           renderSummaryBox(t('preview.byEvent'), preview.by_event_type),
-          renderSummaryBox(t('preview.plannedActions'), preview.actions),
+          renderSummaryBox(
+            t('preview.plannedActions'),
+            preview.actions,
+            (action) => plannedActionPresentation(action).label
+          ),
         ].join('')
 
-        const rows = (preview.report || []).slice(0, 200).map((item) => {
+        const rows = [...(preview.report || [])]
+          .sort((left, right) => String(right.date || '').localeCompare(String(left.date || '')))
+          .slice(0, 200)
+          .map((item) => {
           const amount = typeof item.amount === 'number' ? (item.amount / 100).toFixed(2) : ''
           const transfer = item.transfer_account ? `<br><span class="muted">→ ${escapeHtml(item.transfer_account)}</span>` : ''
           const hasActualMatch = Boolean(item.actual_match)
@@ -680,18 +808,16 @@
             && !item.matched_existing_counterpart
             && !item.duplicate
           )
-          const rowClass = hasActualMatch
-            ? ' class="transfer-match-row"'
-            : (searchedWithoutMatch ? ' class="transfer-unmatched-row"' : '')
+          const outcome = plannedActionPresentation(item.planned_action)
+          const rowClass = ` class="${outcome.rowClass}"`
           const tooltipText = hasActualMatch
             ? formatActualMatchTooltip(item.actual_match)
             : (searchedWithoutMatch ? formatUnmatchedTransferTooltip(item) : '')
           const tooltip = tooltipText ? ` title="${escapeAttr(tooltipText)}"` : ''
-          const action = hasActualMatch
-            ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">${escapeHtml(t('preview.actualMatch'))}</span>`
-            : (searchedWithoutMatch
-              ? `${escapeHtml(item.planned_action || '')}<br><span class="pill">${escapeHtml(t('preview.noMatch'))}</span>`
-              : escapeHtml(item.planned_action || ''))
+          const action = `
+            <span class="sync-outcome ${outcome.badgeClass}">${escapeHtml(outcome.label)}</span>
+            <span class="action-code">${escapeHtml(item.planned_action || t('common.unknown'))}</span>
+          `
           return `
             <tr${rowClass}${tooltip}>
               <td>${escapeHtml(item.date || '')}</td>
@@ -702,7 +828,7 @@
               <td>${escapeHtml(amount)}</td>
             </tr>
           `
-        }).join('')
+          }).join('')
 
         table.innerHTML = rows || `<tr><td colspan="6" class="muted">${escapeHtml(t('preview.noTransactions'))}</td></tr>`
       }
@@ -721,6 +847,51 @@
         ].filter(Boolean).join('\n')
       }
 
+      function plannedActionPresentation(action) {
+        const outcomes = {
+          duplicate: {
+            label: t('preview.willSkip'),
+            rowClass: 'sync-skip-row',
+            badgeClass: 'skip'
+          },
+          link_existing_transfer: {
+            label: t('preview.willLink'),
+            rowClass: 'sync-link-row',
+            badgeClass: 'link'
+          },
+          create_external_transfer_pair: {
+            label: t('preview.willCreateTransfer'),
+            rowClass: 'sync-import-row',
+            badgeClass: 'import'
+          },
+          create_cash_depot_transfer: {
+            label: t('preview.willCreateTransfer'),
+            rowClass: 'sync-import-row',
+            badgeClass: 'import'
+          },
+          import_cash_without_counterpart: {
+            label: t('preview.willImportWithoutCounterpart'),
+            rowClass: 'sync-warning-row',
+            badgeClass: 'warning'
+          },
+          insert_transaction: {
+            label: t('preview.willImport'),
+            rowClass: 'sync-import-row',
+            badgeClass: 'import'
+          },
+          mocked: {
+            label: t('preview.mocked'),
+            rowClass: 'sync-import-row',
+            badgeClass: 'import'
+          }
+        }
+        return outcomes[action] || {
+          label: t('preview.unknownOutcome', { action: action || t('common.unknown') }),
+          rowClass: 'sync-import-row',
+          badgeClass: 'import'
+        }
+      }
+
       function formatUnmatchedTransferTooltip(item) {
         const actionText = {
           create_external_transfer_pair: t('tooltip.createPair'),
@@ -737,10 +908,10 @@
         ].filter(Boolean).join('\n')
       }
 
-      function renderSummaryBox(title, values = {}) {
+      function renderSummaryBox(title, values = {}, labelForKey = (key) => key) {
         const items = Object.entries(values)
           .sort((a, b) => b[1] - a[1])
-          .map(([key, value]) => `<li>${escapeHtml(key)}: <strong>${escapeHtml(value)}</strong></li>`)
+          .map(([key, value]) => `<li>${escapeHtml(labelForKey(key))}: <strong>${escapeHtml(value)}</strong></li>`)
           .join('')
         return `<div class="summary-box"><h3>${escapeHtml(title)}</h3><ul>${items || `<li>${escapeHtml(t('preview.none'))}</li>`}</ul></div>`
       }

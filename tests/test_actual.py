@@ -43,10 +43,22 @@ def test_cross_source_transfer_duplicate_requires_existing_import():
             tombstone=0,
             is_parent=0,
         )
+        linked_import = Transactions(
+            id="linked-import",
+            acct=account.id,
+            date=date_to_int(datetime.date(2026, 3, 30)),
+            amount=-300000,
+            financial_id="old-csv-source-id",
+            transferred_id="existing-counterpart",
+            notes='Trade Republic raw: {"timestamp": "2026-03-30T10:00:00.000Z"}',
+            tombstone=0,
+            is_parent=0,
+        )
         session.add(account)
         session.add(imported)
         session.add(manual)
         session.add(separate_import)
+        session.add(linked_import)
         session.commit()
 
         match = _find_cross_source_import_duplicate(
@@ -70,7 +82,15 @@ def test_cross_source_transfer_duplicate_requires_existing_import():
             -3000,
             'Trade Republic raw: {"timestamp": "2026-03-29T12:00:00.000Z"}',
         )
+        linked_transfer_match = _find_cross_source_import_duplicate(
+            session,
+            account,
+            datetime.date(2026, 3, 30),
+            -3000,
+            'Trade Republic raw: {"timestamp": "2026-03-30T12:00:00.000Z"}',
+        )
 
         assert match.id == imported.id
         assert no_manual_match is None
         assert no_distant_timestamp_match is None
+        assert linked_transfer_match.id == linked_import.id
