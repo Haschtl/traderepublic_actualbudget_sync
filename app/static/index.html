@@ -239,32 +239,6 @@
         border-color: var(--line);
       }
 
-      .metric-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 10px;
-        margin-top: 12px;
-      }
-
-      .metric {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
-        background: #ffffff;
-      }
-
-      .metric span {
-        display: block;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .metric strong {
-        display: block;
-        margin-top: 4px;
-        font-size: 22px;
-      }
-
       details {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -499,8 +473,7 @@
           grid-column: span 12;
         }
 
-        .field-row,
-        .metric-grid {
+        .field-row {
           grid-template-columns: 1fr;
         }
       }
@@ -583,32 +556,6 @@
                 <button id="btn-depot-adjustment" class="secondary" type="button" data-i18n="sync.adjustValue">Depotwert angleichen</button>
               </span>
             </label>
-          </div>
-        </div>
-
-        <div class="panel span-12">
-          <h2 data-i18n="results.title">Letztes Ergebnis</h2>
-          <div class="metric-grid">
-            <div class="metric">
-              <span data-i18n="results.fetched">Abgerufen</span>
-              <strong id="metric-fetched">0</strong>
-            </div>
-            <div class="metric">
-              <span data-i18n="results.mapped">Gemappt</span>
-              <strong id="metric-mapped">0</strong>
-            </div>
-            <div class="metric">
-              <span data-i18n="results.imported">Importiert</span>
-              <strong id="metric-inserted">0</strong>
-            </div>
-            <div class="metric">
-              <span data-i18n="results.duplicates">Duplikate</span>
-              <strong id="metric-duplicates">0</strong>
-            </div>
-            <div class="metric">
-              <span data-i18n="results.matches">Transfer-Matches</span>
-              <strong id="metric-transfer-matches">0</strong>
-            </div>
           </div>
         </div>
 
@@ -763,16 +710,6 @@
 
       function writeJson(id, value) {
         document.getElementById(id).textContent = JSON.stringify(value, null, 2)
-      }
-
-      function updateMetrics({ fetched, mapped, pushed } = {}) {
-        if (typeof fetched === 'number') document.getElementById('metric-fetched').textContent = fetched
-        if (typeof mapped === 'number') document.getElementById('metric-mapped').textContent = mapped
-        if (pushed) {
-          document.getElementById('metric-inserted').textContent = pushed.inserted ?? pushed.accepted ?? 0
-          document.getElementById('metric-duplicates').textContent = pushed.duplicates ?? 0
-          writeJson('import-report', pushed.report || [])
-        }
       }
 
       function renderPreview(preview) {
@@ -971,7 +908,6 @@
         lastMappedTransactions = []
         updatePushButton()
         writeJson('raw', lastRawTransactions)
-        updateMetrics({ fetched: data.count || lastRawTransactions.length })
         await previewMap(lastRawTransactions)
         const fetchMeta = data.fetch_meta
           ? t('import.pages', { count: data.fetch_meta.pages_read ?? 0 })
@@ -994,7 +930,6 @@
         lastMappedTransactions = data || []
         updatePushButton()
         writeJson('mapped', lastMappedTransactions)
-        updateMetrics({ mapped: lastMappedTransactions.length })
         const preview = await previewImport(lastMappedTransactions)
         const transferText = preview
           ? t('mapping.transfers', {
@@ -1017,12 +952,10 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(mappedTransactions)
           })
-          document.getElementById('metric-transfer-matches').textContent = data.matched_existing_counterpart ?? 0
           writeJson('import-report', data.report || [])
           renderPreview(data)
           return data
         } catch (error) {
-          document.getElementById('metric-transfer-matches').textContent = 'n/a'
           writeJson('import-report', [{ action: 'preview_error', error: error.message }])
           renderPreview(null)
           return null
@@ -1048,12 +981,9 @@
         writeJson('raw', lastRawTransactions)
         writeJson('mapped', lastMappedTransactions)
         writeJson('import-report', data.preview?.report || [{ action: 'preview_unavailable', error: data.preview_error || t('mapping.previewUnavailable') }])
-        updateMetrics({ fetched: data.count || lastRawTransactions.length, mapped: data.mapped_count || lastMappedTransactions.length })
         if (data.preview) {
-          document.getElementById('metric-transfer-matches').textContent = data.preview.matched_existing_counterpart ?? 0
           renderPreview(data.preview)
         } else {
-          document.getElementById('metric-transfer-matches').textContent = 'n/a'
           renderPreview(null)
         }
         setStatus(
@@ -1076,7 +1006,7 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(lastMappedTransactions)
         })
-        updateMetrics({ mapped: data.mapped_count, pushed: data.pushed })
+        writeJson('import-report', data.pushed?.report || [])
         setStatus(t('push.done'), summarizePush(data), 'success')
         restoreSessionFromServer()
         return data

@@ -71,10 +71,14 @@ def _find_cross_source_import_duplicate(
         return None
 
     incoming_timestamps = _extract_tr_timestamps(notes)
+    match_days = max(0, settings.transfer_match_days)
+    start = date_to_int(date - datetime.timedelta(days=match_days))
+    end = date_to_int(date + datetime.timedelta(days=match_days))
     candidates = session.exec(
         select(Transactions)
         .where(Transactions.acct == account.id)
-        .where(Transactions.date == date_to_int(date))
+        .where(Transactions.date >= start)
+        .where(Transactions.date <= end)
         .where(Transactions.amount == decimal_to_cents(Decimal(str(amount_eur))))
         .where(Transactions.financial_id.is_not(None))
         .where(Transactions.tombstone == 0)
@@ -87,8 +91,58 @@ def _find_cross_source_import_duplicate(
             for incoming in incoming_timestamps
             for existing in existing_timestamps
         )
-        if timestamps_match or getattr(candidate, "transferred_id", None) is not None:
+        if timestamps_match:
             return candidate
+    return None
+
+
+def _find_existing_linked_transfer_duplicate(
+    session,
+    transfer_account,
+    target_account,
+    date: datetime.date,
+    amount_eur: float,
+):
+    """Find a transfer-account row already linked to the target account."""
+    if transfer_account is None or target_account is None:
+        return None
+    try:
+        from actual.database import Transactions
+        from actual.utils.conversions import date_to_int, decimal_to_cents
+        from sqlmodel import select
+    except ImportError:
+        return None
+
+    target_amount = decimal_to_cents(Decimal(str(amount_eur)))
+    counterpart_amount = -target_amount
+    tolerance = max(0, settings.transfer_match_tolerance_cents)
+    match_days = max(0, settings.transfer_match_days)
+    start = date_to_int(date - datetime.timedelta(days=match_days))
+    end = date_to_int(date + datetime.timedelta(days=match_days))
+
+    counterparts = session.exec(
+        select(Transactions)
+        .where(Transactions.acct == transfer_account.id)
+        .where(Transactions.amount >= counterpart_amount - tolerance)
+        .where(Transactions.amount <= counterpart_amount + tolerance)
+        .where(Transactions.date >= start)
+        .where(Transactions.date <= end)
+        .where(Transactions.transferred_id.is_not(None))
+        .where(Transactions.tombstone == 0)
+        .where(Transactions.is_parent == 0)
+    ).all()
+    for counterpart in counterparts:
+        linked = session.exec(
+            select(Transactions)
+            .where(Transactions.id == counterpart.transferred_id)
+            .where(Transactions.acct == target_account.id)
+            .where(Transactions.amount >= target_amount - tolerance)
+            .where(Transactions.amount <= target_amount + tolerance)
+            .where(Transactions.tombstone == 0)
+            .where(Transactions.is_parent == 0)
+        ).first()
+        if linked is not None:
+            return linked
     return None
 
 
@@ -413,6 +467,14 @@ def preview_import(transactions: List[Dict]) -> Dict[str, Any]:
                     date,
                     amount_eur,
                     tx.get("memo"),
+                )
+            if duplicate_match is None and transfer_account is not None and date and amount_eur:
+                duplicate_match = _find_existing_linked_transfer_duplicate(
+                    session,
+                    transfer_account,
+                    depot_account if tx.get("account_key") == "depot" else cash_account,
+                    date,
+                    amount_eur,
                 )
             duplicate = duplicate_match is not None
             if duplicate:
@@ -914,6 +976,14 @@ def push_transactions(transactions: List[Dict]) -> Dict:
                                 date,
                                 amount_eur,
                                 notes,
+                            )
+                        if duplicate_match is None:
+                            duplicate_match = _find_existing_linked_transfer_duplicate(
+                                session,
+                                transfer_account,
+                                account,
+                                date,
+                                amount_eur,
                             )
                         if duplicate_match is not None:
                             duplicates += 1
