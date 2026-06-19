@@ -350,6 +350,26 @@ def _extract_depot_value(compact_portfolio: Dict | None) -> Dict:
     }
 
 
+def _position_value_breakdown(position: Dict[str, Any]) -> Dict[str, Any]:
+    value = _extract_position_value(position)
+    size = _decimal_from_money(
+        position.get("netSize") or position.get("virtualSize") or position.get("size") or position.get("quantity")
+    )
+    price = _decimal_from_money(position.get("price") or position.get("lastPrice"))
+    error = position.get("ticker_error") or position.get("instrumentDetails_error")
+    if not value and not error:
+        error = "missing_price"
+    return {
+        "instrument_id": position.get("instrumentId") or position.get("isin"),
+        "name": position.get("name") or position.get("instrumentId") or position.get("isin"),
+        "quantity": str(size),
+        "price": float(price) if price else None,
+        "value": float(value) if value else None,
+        "valued": bool(value),
+        "error": str(error) if error else None,
+    }
+
+
 def _as_position_payload(response: Any) -> Dict:
     def collect_positions(value: Any) -> List[Dict]:
         if isinstance(value, list):
@@ -596,6 +616,7 @@ async def _fetch_depot_value_summary(api) -> Dict:
         "buy_cost": float(buy_cost),
         "total_buy_cost": float(cash_value + buy_cost),
         "total_value": float(cash_value + depot_value),
+        "position_breakdown": [_position_value_breakdown(position) for position in positions],
         "raw": {
             "positions": positions,
             "cash": cash_response,
@@ -612,6 +633,16 @@ def fetch_depot_value(session_id: str | None = None) -> Dict:
             "currency": "EUR",
             "depot_value": 3000.0,
             "positions": 1,
+            "valued_positions": 1,
+            "position_breakdown": [{
+                "instrument_id": "MOCK00000001",
+                "name": "Mock-Position",
+                "quantity": "1",
+                "price": 3000.0,
+                "value": 3000.0,
+                "valued": True,
+                "error": None,
+            }],
         }
 
     _load_sessions()

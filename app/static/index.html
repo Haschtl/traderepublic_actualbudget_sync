@@ -274,6 +274,40 @@
         word-break: break-word;
       }
 
+      .depot-positions {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px solid var(--line);
+      }
+
+      .depot-positions-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 8px 16px;
+        margin-bottom: 8px;
+      }
+
+      .depot-positions-header h3 {
+        margin: 0;
+      }
+
+      .position-status {
+        display: inline-flex;
+        padding: 2px 7px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        background: #d1fadf;
+        color: var(--success);
+      }
+
+      .position-status.unvalued {
+        background: #fef0c7;
+        color: #93370d;
+      }
+
       .session-card {
         min-width: 260px;
         text-align: right;
@@ -627,6 +661,26 @@
             <div id="depot-notice-title" class="depot-notice-title"></div>
             <div id="depot-notice-body" class="depot-notice-body"></div>
           </div>
+          <div id="depot-positions" class="depot-positions" hidden>
+            <div class="depot-positions-header">
+              <h3 data-i18n="portfolio.positionDetails">Verwendete Positionen</h3>
+              <span id="depot-position-counts" class="muted"></span>
+            </div>
+            <div style="overflow:auto;">
+              <table>
+                <thead>
+                  <tr>
+                    <th data-i18n="portfolio.position">Position</th>
+                    <th data-i18n="portfolio.quantity">Stückzahl</th>
+                    <th data-i18n="portfolio.price">Kurs</th>
+                    <th data-i18n="portfolio.positionValue">Wert</th>
+                    <th data-i18n="portfolio.valuationStatus">Bewertung</th>
+                  </tr>
+                </thead>
+                <tbody id="depot-position-table"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
 
         <div class="span-12">
@@ -708,13 +762,14 @@
       </dialog>
     </main>
 
-    <script src="/static/i18n.js?v=20260619-6"></script>
+    <script src="/static/i18n.js?v=20260619-7"></script>
     <script>
       let currentSessionId = localStorage.getItem('tr_session_id') || null
       let lastRawTransactions = []
       let lastMappedTransactions = []
       let lastPreview = null
       let lastServerStatus = null
+      let lastDepotPositionData = null
       let depotPreviewTimer = null
       let depotPreviewVersion = 0
       const t = window.i18n.t
@@ -1179,6 +1234,59 @@
         return `${prefix}${amount.toFixed(2)}`
       }
 
+      function formatPositionNumber(value, digits) {
+        if (value === null || value === undefined || value === '') return '—'
+        const number = Number(value)
+        if (!Number.isFinite(number)) return String(value)
+        const fixed = number.toFixed(digits)
+        return fixed.includes('.') ? fixed.replace(/0+$/, '').replace(/\.$/, '') : fixed
+      }
+
+      function renderDepotPositions(data) {
+        const section = document.getElementById('depot-positions')
+        const table = document.getElementById('depot-position-table')
+        const positions = Array.isArray(data?.position_breakdown) ? data.position_breakdown : []
+        lastDepotPositionData = positions.length ? data : null
+        if (!positions.length) {
+          section.hidden = true
+          table.innerHTML = ''
+          return
+        }
+
+        const valued = positions.filter((position) => position.valued).length
+        document.getElementById('depot-position-counts').textContent = t('portfolio.positionCounts', {
+          valued,
+          unvalued: positions.length - valued
+        })
+        table.innerHTML = [...positions]
+          .sort((a, b) => Number(a.valued) - Number(b.valued))
+          .map((position) => {
+            const reason = position.error === 'missing_price'
+              ? t('portfolio.missingPrice')
+              : (position.error || '')
+            const statusText = position.valued ? t('portfolio.valued') : t('portfolio.unvalued')
+            const statusClass = position.valued ? '' : ' unvalued'
+            const statusTitle = reason ? ` title="${escapeAttr(reason)}"` : ''
+            const value = position.valued
+              ? `${formatPositionNumber(position.value, 2)} EUR`
+              : '—'
+            const price = position.price !== null && position.price !== undefined
+              ? `${formatPositionNumber(position.price, 4)} EUR`
+              : '—'
+            return `
+              <tr>
+                <td><strong>${escapeHtml(position.name || position.instrument_id || '')}</strong><span class="action-code">${escapeHtml(position.instrument_id || '')}</span></td>
+                <td>${escapeHtml(formatPositionNumber(position.quantity, 8))}</td>
+                <td>${escapeHtml(price)}</td>
+                <td>${escapeHtml(value)}</td>
+                <td><span class="position-status${statusClass}"${statusTitle}>${escapeHtml(statusText)}</span></td>
+              </tr>
+            `
+          })
+          .join('')
+        section.hidden = false
+      }
+
       function renderDepotPlan(plan) {
         const current = Number(plan.current_balance || 0).toFixed(2)
         const target = Number(plan.target_balance || 0).toFixed(2)
@@ -1221,6 +1329,8 @@
 
       function scheduleDepotPreview() {
         cancelScheduledDepotPreview()
+        lastDepotPositionData = null
+        document.getElementById('depot-positions').hidden = true
         const input = document.getElementById('depot-target-value')
         if (!input.value.trim()) {
           document.getElementById('depot-notice').hidden = true
@@ -1269,6 +1379,8 @@
 
       async function loadDepotValueFromTradeRepublic({ silent = false } = {}) {
         cancelScheduledDepotPreview()
+        lastDepotPositionData = null
+        document.getElementById('depot-positions').hidden = true
         if (!currentSessionId) {
           const error = new Error(t('portfolio.connectFirst'))
           setDepotNotice(t('status.portfolioLoadFailed'), error.message, 'error')
@@ -1283,6 +1395,7 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(sessionPayload())
           })
+          renderDepotPositions(data)
           if (typeof data.depot_value === 'number') {
             const targetValue = data.depot_value.toFixed(2)
             document.getElementById('depot-target-value').value = targetValue
@@ -1457,6 +1570,7 @@
         setSessionId(currentSessionId)
         if (lastServerStatus) renderServerStatus(lastServerStatus)
         if (lastPreview) renderPreview(lastPreview)
+        if (lastDepotPositionData) renderDepotPositions(lastDepotPositionData)
       })
 
       window.i18n.applyTranslations()

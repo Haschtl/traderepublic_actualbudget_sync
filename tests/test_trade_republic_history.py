@@ -225,6 +225,24 @@ def test_extract_depot_value_falls_back_to_size_times_price():
     assert summary["valued_positions"] == 2
 
 
+def test_position_value_breakdown_marks_missing_price_as_unvalued():
+    breakdown = trade_republic._position_value_breakdown({
+        "instrumentId": "NO-PRICE",
+        "name": "Ohne Kurs",
+        "netSize": "2.5",
+    })
+
+    assert breakdown == {
+        "instrument_id": "NO-PRICE",
+        "name": "Ohne Kurs",
+        "quantity": "2.5",
+        "price": None,
+        "value": None,
+        "valued": False,
+        "error": "missing_price",
+    }
+
+
 def test_fetch_depot_value_summary_enriches_prices_from_tickers():
     summary = asyncio.run(trade_republic._fetch_depot_value_summary(FakePortfolioApi()))
 
@@ -233,6 +251,26 @@ def test_fetch_depot_value_summary_enriches_prices_from_tickers():
     assert summary["total_value"] == 9701.42
     assert summary["positions"] == 2
     assert summary["valued_positions"] == 2
+    assert summary["position_breakdown"] == [
+        {
+            "instrument_id": "IE00B57X3V84",
+            "name": "IE00B57X3V84",
+            "quantity": "31.293027",
+            "price": 100.0,
+            "value": 3129.3,
+            "valued": True,
+            "error": None,
+        },
+        {
+            "instrument_id": "XF000ETH0019",
+            "name": "XF000ETH0019",
+            "quantity": "0.0076",
+            "price": 4000.0,
+            "value": 30.4,
+            "valued": True,
+            "error": None,
+        },
+    ]
 
 
 def test_fetch_depot_value_summary_sends_securities_account_number():
