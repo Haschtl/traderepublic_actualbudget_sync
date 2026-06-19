@@ -30,6 +30,8 @@ async def request_language(request: Request, call_next):
     try:
         response = await call_next(request)
         response.headers["Content-Language"] = get_language()
+        if request.url.path in {"/", "/static/i18n.js"}:
+            response.headers["Cache-Control"] = "no-store, max-age=0"
         return response
     finally:
         reset_language(token)

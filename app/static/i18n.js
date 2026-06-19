@@ -215,13 +215,16 @@
   function applyTranslations() {
     document.documentElement.lang = language
     document.querySelectorAll('[data-i18n]').forEach((element) => {
-      element.textContent = t(element.dataset.i18n)
+      const translated = t(element.dataset.i18n)
+      if (translated !== element.dataset.i18n) element.textContent = translated
     })
     document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => {
-      element.placeholder = t(element.dataset.i18nPlaceholder)
+      const translated = t(element.dataset.i18nPlaceholder)
+      if (translated !== element.dataset.i18nPlaceholder) element.placeholder = translated
     })
     document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
-      element.setAttribute('aria-label', t(element.dataset.i18nAriaLabel))
+      const translated = t(element.dataset.i18nAriaLabel)
+      if (translated !== element.dataset.i18nAriaLabel) element.setAttribute('aria-label', translated)
     })
     document.querySelectorAll('[data-language]').forEach((button) => {
       const active = button.dataset.language === language
